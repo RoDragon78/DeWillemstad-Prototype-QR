@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertCircle } from "lucide-react"
 
 interface Guest {
   guest_name: string
@@ -20,9 +22,12 @@ interface GuestSelectionFormProps {
   cabinNumber: string
 }
 
+// Changed from export function GuestSelectionForm to export default function GuestSelectionForm
 export default function GuestSelectionForm({ guests, cabinNumber }: GuestSelectionFormProps) {
   const router = useRouter()
   const [selectedGuests, setSelectedGuests] = useState<number[]>([])
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleGuestToggle = (guestIndex: number) => {
     setSelectedGuests((prev) =>
@@ -34,12 +39,22 @@ export default function GuestSelectionForm({ guests, cabinNumber }: GuestSelecti
     e.preventDefault()
 
     if (selectedGuests.length === 0) {
+      setError("Please select at least one guest")
       return
     }
 
-    // Create a query string with all selected guest indices
-    const guestParams = selectedGuests.map((idx) => `guestIndex=${idx}`).join("&")
-    router.push(`/meal-selection?cabin=${cabinNumber}&${guestParams}`)
+    setIsSubmitting(true)
+    setError(null)
+
+    try {
+      // Create a query string with all selected guest indices
+      const guestParams = selectedGuests.map((idx) => `guestIndex=${idx}`).join("&")
+      router.push(`/meal-selection?cabin=${cabinNumber}&${guestParams}`)
+    } catch (err: any) {
+      console.error("Navigation error:", err)
+      setError("An error occurred. Please try again.")
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -51,6 +66,7 @@ export default function GuestSelectionForm({ guests, cabinNumber }: GuestSelecti
               id={`guest-${index}`}
               checked={selectedGuests.includes(index)}
               onCheckedChange={() => handleGuestToggle(index)}
+              disabled={isSubmitting}
             />
             <Label htmlFor={`guest-${index}`} className="text-base">
               {guest.guest_name} <span className="text-muted-foreground text-sm">({guest.nationality})</span>
@@ -59,8 +75,16 @@ export default function GuestSelectionForm({ guests, cabinNumber }: GuestSelecti
         ))}
       </div>
 
-      <Button type="submit" className="w-full" disabled={selectedGuests.length === 0}>
-        Continue to Meal Selection
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <Button type="submit" className="w-full" disabled={selectedGuests.length === 0 || isSubmitting}>
+        {isSubmitting ? "Processing..." : "Continue to Meal Selection"}
       </Button>
     </form>
   )

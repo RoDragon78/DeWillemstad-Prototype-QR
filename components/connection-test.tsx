@@ -6,7 +6,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 import { Loader2 } from "lucide-react"
 
-export function ConnectionTest() {
+// Changed from export function ConnectionTest to export default function ConnectionTest
+export default function ConnectionTest() {
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<{ success: boolean; message: string; data?: any } | null>(null)
 

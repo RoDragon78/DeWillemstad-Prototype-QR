@@ -8,22 +8,28 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
+// Changed from export function SimpleCabinForm() to export default function SimpleCabinForm()
 export default function SimpleCabinForm() {
   const router = useRouter()
   const [cabinNumber, setCabinNumber] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [validationError, setValidationError] = useState<string | null>(null)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
 
-    if (!cabinNumber) {
-      setError("Cabin number is required")
+    // Reset errors
+    setValidationError(null)
+    setError(null)
+
+    // Validate input
+    if (!cabinNumber.trim()) {
+      setValidationError("Cabin number is required")
       return
     }
 
     setIsLoading(true)
-    setError(null)
 
     try {
       // Create Supabase client directly
@@ -33,15 +39,15 @@ export default function SimpleCabinForm() {
       )
 
       // Check if cabin exists in the manifest
-      const { data, error } = await supabase
+      const { data, error: supabaseError } = await supabase
         .from("guest_manifest")
         .select("*")
         .eq("cabin_nr", cabinNumber)
         .eq("cruise_id", "CR2023-06")
 
-      if (error) {
-        console.error("Supabase query error:", error)
-        throw error
+      if (supabaseError) {
+        console.error("Supabase query error:", supabaseError)
+        throw supabaseError
       }
 
       if (!data || data.length === 0) {
@@ -71,9 +77,15 @@ export default function SimpleCabinForm() {
           id="cabinNumber"
           placeholder="Enter your cabin number (e.g., A101)"
           value={cabinNumber}
-          onChange={(e) => setCabinNumber(e.target.value)}
+          onChange={(e) => {
+            setCabinNumber(e.target.value)
+            if (e.target.value.trim()) {
+              setValidationError(null)
+            }
+          }}
+          disabled={isLoading}
         />
-        {!cabinNumber && <p className="text-sm text-red-500">Cabin number is required</p>}
+        {validationError && <p className="text-sm text-red-500">{validationError}</p>}
       </div>
 
       {error && (
