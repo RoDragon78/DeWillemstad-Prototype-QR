@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { createClient } from "@/lib/supabase/client"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 import { Loader2 } from "lucide-react"
 
 export function ConnectionTest() {
@@ -15,7 +15,11 @@ export function ConnectionTest() {
     setResult(null)
 
     try {
-      const supabase = createClient()
+      // Create Supabase client directly
+      const supabase = createSupabaseClient(
+        "https://attdjiaiquhmcmipxgrt.supabase.co",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0dGRqaWFpcXVobWNtaXB4Z3J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDczOTg3ODMsImV4cCI6MjA2Mjk3NDc4M30.suoAVmwx0nnO33MCYqresbYryhGdYR_oRUhe0P0i2oE",
+      )
 
       // Test a simple query
       const { data, error } = await supabase.from("guest_manifest").select("cabin_nr").limit(1)

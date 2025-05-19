@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
+import { createDirectClient } from "@/lib/supabase/direct-client"
 import MealSelectionForm from "@/components/meal-selection-form"
 
 export default async function MealSelectionPage({
@@ -18,7 +18,7 @@ export default async function MealSelectionPage({
     redirect("/")
   }
 
-  const supabase = createClient()
+  const supabase = createDirectClient()
 
   // Fetch guest details
   const { data: guests, error: guestError } = await supabase
@@ -28,6 +28,7 @@ export default async function MealSelectionPage({
     .eq("cruise_id", "CR2023-06")
 
   if (guestError || !guests || guests.length === 0) {
+    console.error("Error fetching guests:", guestError)
     redirect("/")
   }
 

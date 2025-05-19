@@ -8,9 +8,9 @@ import * as z from "zod"
 import { Button } from "@/components/ui/button"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { createClient } from "@/lib/supabase/client"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
 const formSchema = z.object({
   cabinNumber: z.string().min(1, {
@@ -35,7 +35,11 @@ export default function CabinForm() {
     setError(null)
 
     try {
-      const supabase = createClient()
+      // Create Supabase client directly in the component
+      const supabase = createSupabaseClient(
+        "https://attdjiaiquhmcmipxgrt.supabase.co",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0dGRqaWFpcXVobWNtaXB4Z3J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDczOTg3ODMsImV4cCI6MjA2Mjk3NDc4M30.suoAVmwx0nnO33MCYqresbYryhGdYR_oRUhe0P0i2oE",
+      )
 
       // Check if cabin exists in the manifest
       const { data, error } = await supabase

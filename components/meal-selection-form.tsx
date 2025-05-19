@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { createClient } from "@/lib/supabase/client"
+import { createDirectClient } from "@/lib/supabase/direct-client"
 
 interface Guest {
   index: number
@@ -116,7 +116,7 @@ export default function MealSelectionForm({ guests, menuItems, cabinNumber }: Me
     setIsSubmitting(true)
 
     try {
-      const supabase = createClient()
+      const supabase = createDirectClient()
 
       // Format selections for database
       const mealChoices = []

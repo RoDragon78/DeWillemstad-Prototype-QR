@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 import GuestSelectionForm from "@/components/guest-selection-form"
 
 export default async function SelectGuestsPage({
@@ -13,7 +13,11 @@ export default async function SelectGuestsPage({
     redirect("/")
   }
 
-  const supabase = createClient()
+  // Create Supabase client directly
+  const supabase = createSupabaseClient(
+    "https://attdjiaiquhmcmipxgrt.supabase.co",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0dGRqaWFpcXVobWNtaXB4Z3J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDczOTg3ODMsImV4cCI6MjA2Mjk3NDc4M30.suoAVmwx0nnO33MCYqresbYryhGdYR_oRUhe0P0i2oE",
+  )
 
   // Fetch guests for this cabin
   const { data: guests, error } = await supabase
@@ -23,6 +27,7 @@ export default async function SelectGuestsPage({
     .eq("cruise_id", "CR2023-06") // Using the cruise ID from sample data
 
   if (error || !guests || guests.length === 0) {
+    console.error("Error fetching guests:", error)
     redirect("/")
   }
 
