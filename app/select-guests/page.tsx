@@ -148,7 +148,7 @@ export default function SelectGuestsPage() {
                   className="h-4 w-4"
                 />
                 <label htmlFor={`guest-${index}`} className="text-base">
-                  {guest.guest_name} <span className="text-gray-500 text-sm">({guest.nationality})</span>
+                  {guest.guest_name}
                 </label>
               </div>
             ))}
