@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
-export async function middleware(request: NextRequest) {
-  // You can add middleware logic here if needed
-  // For example, to check if a cabin exists before allowing access to certain pages
-
+export function middleware(request: NextRequest) {
+  // Simply pass through all requests without any processing
   return NextResponse.next()
+}
+
+// Optional: Configure which paths should trigger this middleware
+export const config = {
+  matcher: [
+    // Skip all internal paths (_next)
+    "/((?!_next/static|_next/image|favicon.ico).*)",
+  ],
 }
