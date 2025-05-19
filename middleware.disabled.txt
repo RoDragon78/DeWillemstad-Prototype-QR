@@ -1,0 +1,3 @@
+// This file exists to indicate that middleware has been intentionally disabled
+// The original middleware.ts file has been removed to troubleshoot Vercel deployment issues
+// MIDDLEWARE_INVOCATION_FAILED errors should no longer occur
