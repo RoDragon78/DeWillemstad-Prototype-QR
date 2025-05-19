@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import * as z from "zod" // Make sure this import is correct
+import * as z from "zod"
 import { Button } from "@/components/ui/button"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
@@ -12,25 +12,31 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
+// Define the form schema
 const formSchema = z.object({
   cabinNumber: z.string().min(1, {
     message: "Cabin number is required",
   }),
 })
 
+// Define the form values type
+type FormValues = z.infer<typeof formSchema>
+
 export default function CabinForm() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const form = useForm<z.infer<typeof formSchema>>({
+  // Initialize the form with proper types
+  const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       cabinNumber: "",
     },
   })
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
+  // Define the submit handler with proper typing
+  const onSubmit = async (values: FormValues) => {
     setIsLoading(true)
     setError(null)
 
