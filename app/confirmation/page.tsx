@@ -36,7 +36,6 @@ export default function ConfirmationPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeGuestIndex, setActiveGuestIndex] = useState(0)
-  const [fetchAttempts, setFetchAttempts] = useState(0)
 
   // Fetch guests, meal choices, and menu items
   useEffect(() => {
@@ -51,23 +50,7 @@ export default function ConfirmationPage() {
         setError(null)
 
         // Fetch guests
-        let guestData: Guest[] = []
-        try {
-          guestData = await getGuestsByCabin(cabinNumber)
-        } catch (err) {
-          console.error("Error fetching guests:", err)
-          // If we've already tried 3 times, show an error
-          if (fetchAttempts >= 2) {
-            setError(t("error"))
-            setIsLoading(false)
-            return
-          }
-          // Otherwise, try again after a delay
-          setTimeout(() => {
-            setFetchAttempts(fetchAttempts + 1)
-          }, 1000)
-          return
-        }
+        const guestData = await getGuestsByCabin(cabinNumber)
 
         if (guestData.length === 0) {
           setError(t("noCabinFound"))
@@ -86,13 +69,12 @@ export default function ConfirmationPage() {
         }
 
         // Fetch meal choices
-        let choices: MealChoice[] = []
         try {
-          choices = await getMealChoicesByCabin(cabinNumber)
+          const choices = await getMealChoicesByCabin(cabinNumber)
           setMealChoices(choices)
         } catch (err) {
           console.error("Error fetching meal choices:", err)
-          // Continue with empty choices rather than failing completely
+          // Continue with empty choices
           setMealChoices([])
         }
 
@@ -102,7 +84,7 @@ export default function ConfirmationPage() {
           setMenuItems(items)
         } catch (err) {
           console.error("Error fetching menu items:", err)
-          // Continue with empty menu items rather than failing completely
+          // Continue with empty menu items
           setMenuItems([])
         }
       } catch (err) {
@@ -114,7 +96,7 @@ export default function ConfirmationPage() {
     }
 
     fetchData()
-  }, [cabinNumber, guestIndices, router, t, fetchAttempts])
+  }, [cabinNumber, guestIndices, router, t])
 
   // Update language in URL when changed
   useEffect(() => {

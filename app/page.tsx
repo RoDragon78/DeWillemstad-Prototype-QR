@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation"
 import { LanguageSelector } from "@/components/language-selector"
 import { useTranslations } from "@/lib/i18n/use-translations"
 import type { Language } from "@/lib/i18n/translations"
-import { hasCabinSubmittedChoices, getGuestsByCabin } from "@/lib/supabase-client"
+import { hasCabinSubmittedChoices } from "@/lib/supabase-client"
 
 export default function Home() {
   const router = useRouter()
@@ -44,16 +44,7 @@ export default function Home() {
     setSelectionCompleted(false)
 
     try {
-      // First check if the cabin exists
-      const guests = await getGuestsByCabin(cabinNumber)
-
-      if (!guests || guests.length === 0) {
-        setError(t("noCabinFound"))
-        setIsLoading(false)
-        return
-      }
-
-      // Then check if cabin has already submitted choices
+      // Check if cabin has already submitted choices
       const hasSubmitted = await hasCabinSubmittedChoices(cabinNumber)
 
       if (hasSubmitted) {

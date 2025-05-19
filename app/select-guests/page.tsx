@@ -22,7 +22,6 @@ export default function SelectGuestsPage() {
   const [selectedGuests, setSelectedGuests] = useState<number[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [fetchAttempts, setFetchAttempts] = useState(0)
 
   // Fetch guests for the cabin
   useEffect(() => {
@@ -49,26 +48,14 @@ export default function SelectGuestsPage() {
         setSelectedGuests(guestData.map((_, index) => index))
       } catch (err) {
         console.error("Error fetching guests:", err)
-
-        // If we've already tried 3 times, show an error
-        if (fetchAttempts >= 2) {
-          setError(t("error"))
-          setIsLoading(false)
-          return
-        }
-
-        // Otherwise, try again after a delay
-        setTimeout(() => {
-          setFetchAttempts(fetchAttempts + 1)
-        }, 1000)
-        return
+        setError(t("error"))
       } finally {
         setIsLoading(false)
       }
     }
 
     fetchGuests()
-  }, [cabinNumber, router, t, fetchAttempts])
+  }, [cabinNumber, router, t])
 
   // Update language in URL when changed
   useEffect(() => {
