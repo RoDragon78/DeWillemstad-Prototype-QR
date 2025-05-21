@@ -1,7 +1,6 @@
 "use client"
 
 import { CommandGroup } from "@/components/ui/command"
-
 import { CommandEmpty } from "@/components/ui/command"
 
 import { useEffect, useState, useCallback } from "react"
@@ -18,13 +17,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandList, CommandInput, CommandItem } from "@/components/ui/command"
 import { clientStorage } from "@/utils/client-storage"
 
-// Table capacity configuration based on the floor plan
+// Table capacity configuration based on the floor plan - removed tables 5 and 15
 const TABLE_CAPACITIES = {
   1: 4,
   2: 6,
   3: 6,
   4: 4,
-  5: 6,
   6: 6,
   7: 4,
   8: 4,
@@ -34,7 +32,6 @@ const TABLE_CAPACITIES = {
   12: 4,
   13: 4,
   14: 6,
-  15: 6,
   16: 4,
   17: 6,
   18: 6,
@@ -50,7 +47,7 @@ interface Guest {
   booking_number: string
   nationality: string
   table_nr?: number
-  name: string // Make name required
+  name: string
 }
 
 // Add a new interface for cabin suggestions
@@ -258,7 +255,7 @@ export default function DashboardPage() {
     setTableAssignments(assignments)
   }
 
-  // Assign tables automatically
+  // Assign tables automatically - start from table 20 instead of table 1
   const assignTablesAutomatically = async () => {
     try {
       setAssigningTables(true)
@@ -316,8 +313,11 @@ export default function DashboardPage() {
       // Sort groups by size (largest first) for better table utilization
       const sortedGroups = Object.values(groupedGuests).sort((a, b) => b.length - a.length)
 
-      // Start assigning tables
-      const tableNumbers = Object.keys(TABLE_CAPACITIES).map(Number)
+      // Start assigning tables - use reverse order of table numbers (start from highest)
+      const tableNumbers = Object.keys(TABLE_CAPACITIES)
+        .map(Number)
+        .sort((a, b) => b - a) // Sort in descending order
+
       const tableAssignments: Record<number, Guest[]> = {}
       const updates: Partial<Guest>[] = []
 
@@ -772,16 +772,6 @@ export default function DashboardPage() {
 
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="table-number">Table Number</Label>
-                  <Input
-                    id="table-number"
-                    placeholder="e.g. 1"
-                    value={newTableNumber}
-                    onChange={(e) => setNewTableNumber(e.target.value)}
-                  />
-                </div>
-
-                <div>
                   <Label htmlFor="cabin-number">Cabin Number</Label>
                   <div className="relative mt-1">
                     <Popover open={cabinSearchOpen} onOpenChange={setCabinSearchOpen}>
@@ -813,7 +803,7 @@ export default function DashboardPage() {
                                       newCabinNumber === cabin.cabin_number ? "opacity-100" : "opacity-0"
                                     }`}
                                   />
-                                  {cabin.cabin_number} - {cabin.guests.length} guest(s)
+                                  {cabin.cabin_number} - {cabin.guests.map((g) => g.name).join(", ")}
                                 </CommandItem>
                               ))}
                             </CommandGroup>
@@ -826,7 +816,7 @@ export default function DashboardPage() {
 
                 {selectedCabinGuests.length > 0 && (
                   <div className="mt-2 p-3 bg-gray-50 rounded-md">
-                    <h4 className="text-sm font-medium mb-2">Selected Guests:</h4>
+                    <h4 className="text-sm font-medium mb-2">Guest Names:</h4>
                     <ul className="space-y-1">
                       {selectedCabinGuests.map((guest) => (
                         <li key={guest.id} className="text-sm flex items-center">
@@ -838,6 +828,16 @@ export default function DashboardPage() {
                     </ul>
                   </div>
                 )}
+
+                <div>
+                  <Label htmlFor="table-number">Table Number</Label>
+                  <Input
+                    id="table-number"
+                    placeholder="e.g. 20"
+                    value={newTableNumber}
+                    onChange={(e) => setNewTableNumber(e.target.value)}
+                  />
+                </div>
 
                 <div>
                   <Label htmlFor="nationality">Nationality (Optional)</Label>
@@ -883,10 +883,10 @@ export default function DashboardPage() {
                     Cabin Numbers
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Nationality
+                    Guest Names
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Booking Number
+                    Nationality
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
@@ -895,47 +895,59 @@ export default function DashboardPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredAssignments.length > 0 ? (
-                  filteredAssignments.map((assignment, index) => (
-                    <tr key={index}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {assignment.table_number}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <div className="flex flex-wrap gap-1">
-                          {assignment.cabins.map((cabin) => (
-                            <Badge
-                              key={cabin}
-                              className="flex items-center gap-1 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                            >
-                              {cabin}
-                              <button
-                                onClick={() => removeCabinFromTable(assignment.table_number, cabin)}
-                                className="ml-1 text-blue-500 hover:text-blue-700"
+                  filteredAssignments.map((assignment, index) => {
+                    // Find all guests for this assignment
+                    const assignmentGuests = guests.filter(
+                      (g) =>
+                        g.table_nr === assignment.table_number &&
+                        assignment.cabins.includes(g.cabin_number) &&
+                        g.nationality === assignment.nationality,
+                    )
+
+                    return (
+                      <tr key={index}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {assignment.table_number}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <div className="flex flex-wrap gap-1">
+                            {assignment.cabins.map((cabin) => (
+                              <Badge
+                                key={cabin}
+                                className="flex items-center gap-1 bg-blue-50 text-blue-700 hover:bg-blue-100"
                               >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </Badge>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{assignment.nationality}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{assignment.booking_number}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-blue-600 hover:text-blue-800"
-                          onClick={() => {
-                            setNewTableNumber(assignment.table_number.toString())
-                            setNewNationality(assignment.nationality)
-                          }}
-                        >
-                          <Plus className="h-4 w-4 mr-1" />
-                          Add Cabin
-                        </Button>
-                      </td>
-                    </tr>
-                  ))
+                                {cabin}
+                                <button
+                                  onClick={() => removeCabinFromTable(assignment.table_number, cabin)}
+                                  className="ml-1 text-blue-500 hover:text-blue-700"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {assignmentGuests.map((g) => g.name).join(", ")}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{assignment.nationality}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-blue-600 hover:text-blue-800"
+                            onClick={() => {
+                              setNewTableNumber(assignment.table_number.toString())
+                              setNewNationality(assignment.nationality)
+                            }}
+                          >
+                            <Plus className="h-4 w-4 mr-1" />
+                            Add Cabin
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })
                 ) : (
                   <tr>
                     <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
