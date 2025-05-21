@@ -1,124 +1,30 @@
 "use client"
+import Link from "next/link"
+import { SimpleCabinForm } from "@/components/simple-cabin-form"
 
-import type React from "react"
-
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { LanguageSelector } from "@/components/language-selector"
-import { useTranslations } from "@/lib/i18n/use-translations"
-import type { Language } from "@/lib/i18n/translations"
-import { hasCabinSubmittedChoices } from "@/lib/supabase-client"
-
-export default function Home() {
-  const router = useRouter()
-  const [language, setLanguage] = useState<Language>("en")
-  const { t } = useTranslations(language)
-  const [cabinNumber, setCabinNumber] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [selectionCompleted, setSelectionCompleted] = useState(false)
-
-  // Store language preference
-  useEffect(() => {
-    localStorage.setItem("language", language)
-  }, [language])
-
-  // Load language preference
-  useEffect(() => {
-    const savedLanguage = localStorage.getItem("language") as Language | null
-    if (savedLanguage && ["en", "de", "nl"].includes(savedLanguage)) {
-      setLanguage(savedLanguage as Language)
-    }
-  }, [])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!cabinNumber.trim()) {
-      setError(t("noCabinFound"))
-      return
-    }
-
-    setIsLoading(true)
-    setError(null)
-    setSelectionCompleted(false)
-
-    try {
-      // Check if cabin has already submitted choices
-      const hasSubmitted = await hasCabinSubmittedChoices(cabinNumber)
-
-      if (hasSubmitted) {
-        // Show message that selection is already completed
-        setSelectionCompleted(true)
-
-        // After a short delay, redirect to confirmation page
-        setTimeout(() => {
-          router.push(`/confirmation?cabin=${cabinNumber}&language=${language}`)
-        }, 2000)
-      } else {
-        // Otherwise, go to guest selection
-        router.push(`/select-guests?cabin=${cabinNumber}&language=${language}`)
-      }
-    } catch (err: any) {
-      console.error("Error checking cabin:", err)
-      setError(t("error"))
-    } finally {
-      if (!selectionCompleted) {
-        setIsLoading(false)
-      }
-    }
-  }
-
+export default function HomePage() {
   return (
-    <div className="container mx-auto py-10 px-4 max-w-4xl relative">
-      <LanguageSelector language={language} onChange={setLanguage} />
-
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">{t("title")}</h1>
-        <p className="text-muted-foreground mt-2">{t("subtitle")}</p>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4">
+      <div className="absolute right-4 top-4">
+        <select className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm">
+          <option value="en">English</option>
+          <option value="nl">Nederlands</option>
+        </select>
       </div>
 
-      <div className="max-w-md mx-auto">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <label htmlFor="cabinNumber" className="text-sm font-medium">
-              {t("cabinNumber")}
-            </label>
-            <input
-              id="cabinNumber"
-              type="text"
-              value={cabinNumber}
-              onChange={(e) => setCabinNumber(e.target.value)}
-              placeholder={t("enterCabinNumber")}
-              className="w-full p-2 border rounded"
-              disabled={isLoading || selectionCompleted}
-            />
-          </div>
+      <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold">DeWillemstad Meal Selection</h1>
+          <p className="mt-2 text-gray-600">River Cruise Dining</p>
+        </div>
 
-          {error && <p className="text-red-500">{error}</p>}
+        <SimpleCabinForm />
 
-          {selectionCompleted && (
-            <div className="bg-green-50 border border-green-200 rounded-md p-4 text-center">
-              <p className="text-green-700">{t("selectionAlreadyCompleted")}</p>
-              <p className="text-green-600 text-sm mt-1">{t("redirectingToConfirmation")}</p>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300"
-            disabled={isLoading || selectionCompleted || !cabinNumber.trim()}
-          >
-            {isLoading ? (
-              <div className="flex items-center justify-center">
-                <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white mr-2"></div>
-                {t("searching")}
-              </div>
-            ) : (
-              t("continue")
-            )}
-          </button>
-        </form>
+        <div className="mt-6 text-center">
+          <Link href="/admin/login" className="text-sm text-gray-500 hover:text-gray-700">
+            Admin
+          </Link>
+        </div>
       </div>
     </div>
   )

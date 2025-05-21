@@ -1,3 +1,7 @@
 export default function Loading() {
-  return null
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <p className="text-lg">Loading meal selection...</p>
+    </div>
+  )
 }
