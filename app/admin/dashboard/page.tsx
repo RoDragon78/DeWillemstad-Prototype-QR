@@ -3,30 +3,514 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { BarChart3, Calendar, Users, Utensils, Settings, Home, FileText } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { Trash2, Plus, Search, RefreshCw } from "lucide-react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { FloorPlan } from "@/components/floor-plan"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+
+// Table capacity configuration based on the floor plan
+const TABLE_CAPACITIES = {
+  1: 4,
+  2: 6,
+  3: 6,
+  4: 4,
+  5: 6,
+  6: 6,
+  7: 4,
+  8: 4,
+  9: 4,
+  10: 4,
+  11: 4,
+  12: 4,
+  13: 4,
+  14: 6,
+  15: 6,
+  16: 4,
+  17: 6,
+  18: 6,
+  19: 6,
+  20: 4,
+}
+
+// Types
+interface Guest {
+  id: string
+  cruise_id: string
+  cabin_number: string
+  booking_number: string
+  nationality: string
+  table_nr?: number
+  name?: string
+}
+
+interface TableAssignment {
+  table_number: number
+  cabins: string[]
+  nationality: string
+  booking_number: string
+}
 
 export default function DashboardPage() {
   const router = useRouter()
+  const supabase = createClientComponentClient()
+
+  // State
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("overview")
+  const [assigningTables, setAssigningTables] = useState(false)
+  const [tableAssignments, setTableAssignments] = useState<TableAssignment[]>([])
+  const [guests, setGuests] = useState<Guest[]>([])
+  const [searchTerm, setSearchTerm] = useState("")
+  const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error" | "info"; message: string } | null>(
+    null,
+  )
 
+  // Form state for adding a cabin manually
+  const [newTableNumber, setNewTableNumber] = useState("")
+  const [newCabinNumber, setNewCabinNumber] = useState("")
+  const [newNationality, setNewNationality] = useState("")
+
+  // Check authentication and fetch data
   useEffect(() => {
-    // Check if user is authenticated using localStorage
     const isAuthenticated = localStorage.getItem("isAdminAuthenticated") === "true"
-
     if (!isAuthenticated) {
       router.push("/admin/login")
     } else {
-      setLoading(false)
+      fetchGuests()
     }
   }, [router])
 
+  // Fetch all guests
+  const fetchGuests = async () => {
+    try {
+      setLoading(true)
+
+      const { data, error } = await supabase.from("guest_manifest").select("*")
+
+      if (error) throw error
+
+      setGuests(data || [])
+      processTableAssignments(data || [])
+      setLoading(false)
+    } catch (error) {
+      console.error("Error fetching guests:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to fetch guest data. Please try again.",
+      })
+      setLoading(false)
+    }
+  }
+
+  // Process guests into table assignments
+  const processTableAssignments = (guestData: Guest[]) => {
+    const assignments: TableAssignment[] = []
+
+    // Group guests by table number
+    const tableGroups: Record<number, Guest[]> = {}
+
+    guestData.forEach((guest) => {
+      if (guest.table_nr) {
+        if (!tableGroups[guest.table_nr]) {
+          tableGroups[guest.table_nr] = []
+        }
+        tableGroups[guest.table_nr].push(guest)
+      }
+    })
+
+    // Convert to table assignments
+    Object.entries(tableGroups).forEach(([tableNumber, tableGuests]) => {
+      // Group by nationality within the table
+      const nationalityGroups: Record<string, Guest[]> = {}
+
+      tableGuests.forEach((guest) => {
+        const nationality = guest.nationality || "Unknown"
+        if (!nationalityGroups[nationality]) {
+          nationalityGroups[nationality] = []
+        }
+        nationalityGroups[nationality].push(guest)
+      })
+
+      // Create an assignment for each nationality group
+      Object.entries(nationalityGroups).forEach(([nationality, nationalityGuests]) => {
+        // Further group by booking number
+        const bookingGroups: Record<string, Guest[]> = {}
+
+        nationalityGuests.forEach((guest) => {
+          const bookingNumber = guest.booking_number || "Unknown"
+          if (!bookingGroups[bookingNumber]) {
+            bookingGroups[bookingNumber] = []
+          }
+          bookingGroups[bookingNumber].push(guest)
+        })
+
+        // Create an assignment for each booking group
+        Object.entries(bookingGroups).forEach(([bookingNumber, bookingGuests]) => {
+          assignments.push({
+            table_number: Number.parseInt(tableNumber),
+            cabins: bookingGuests.map((g) => g.cabin_number),
+            nationality,
+            booking_number: bookingNumber,
+          })
+        })
+      })
+    })
+
+    // Sort by table number
+    assignments.sort((a, b) => a.table_number - b.table_number)
+    setTableAssignments(assignments)
+  }
+
+  // Assign tables automatically
+  const assignTablesAutomatically = async () => {
+    try {
+      setAssigningTables(true)
+      setStatusMessage({
+        type: "info",
+        message: "Assigning tables automatically...",
+      })
+
+      // First, clear existing table assignments
+      const { error: clearError } = await supabase.from("guest_manifest").update({ table_nr: null })
+
+      if (clearError) throw clearError
+
+      // Fetch all guests again to ensure we have the latest data
+      const { data: guests, error: fetchError } = await supabase
+        .from("guest_manifest")
+        .select("*")
+        .order("booking_number", { ascending: true })
+
+      if (fetchError) throw fetchError
+      if (!guests || guests.length === 0) {
+        setStatusMessage({
+          type: "info",
+          message: "No guests found.",
+        })
+        setAssigningTables(false)
+        return
+      }
+
+      // Group guests by booking number and nationality
+      const groupedGuests: Record<string, Guest[]> = {}
+
+      guests.forEach((guest) => {
+        const key = `${guest.booking_number}_${guest.nationality}`
+        if (!groupedGuests[key]) {
+          groupedGuests[key] = []
+        }
+        groupedGuests[key].push(guest)
+      })
+
+      // Sort groups by size (largest first) for better table utilization
+      const sortedGroups = Object.values(groupedGuests).sort((a, b) => b.length - a.length)
+
+      // Start assigning tables from table 20 down to 1
+      const tableNumbers = Object.keys(TABLE_CAPACITIES)
+        .map(Number)
+        .sort((a, b) => b - a) // Sort in descending order (20 to 1)
+
+      const tableAssignments: Record<number, Guest[]> = {}
+      const updates: Partial<Guest>[] = []
+
+      // Initialize table assignments
+      tableNumbers.forEach((tableNumber) => {
+        tableAssignments[tableNumber] = []
+      })
+
+      // Assign groups to tables
+      for (const group of sortedGroups) {
+        const groupSize = group.length
+
+        // Find a table that can accommodate this group
+        let assignedTable: number | null = null
+
+        for (const tableNumber of tableNumbers) {
+          const capacity = TABLE_CAPACITIES[tableNumber]
+          const currentOccupancy = tableAssignments[tableNumber].length
+
+          if (currentOccupancy + groupSize <= capacity) {
+            assignedTable = tableNumber
+            break
+          }
+        }
+
+        // If no table can accommodate the entire group, find the table with the most available space
+        if (assignedTable === null) {
+          let maxAvailableSpace = 0
+          let bestTable = tableNumbers[0]
+
+          for (const tableNumber of tableNumbers) {
+            const capacity = TABLE_CAPACITIES[tableNumber]
+            const currentOccupancy = tableAssignments[tableNumber].length
+            const availableSpace = capacity - currentOccupancy
+
+            if (availableSpace > maxAvailableSpace) {
+              maxAvailableSpace = availableSpace
+              bestTable = tableNumber
+            }
+          }
+
+          assignedTable = bestTable
+        }
+
+        // Assign as many guests as possible to this table
+        const capacity = TABLE_CAPACITIES[assignedTable]
+        const currentOccupancy = tableAssignments[assignedTable].length
+        const availableSpace = capacity - currentOccupancy
+        const guestsToAssign = group.slice(0, availableSpace)
+
+        // Add guests to this table
+        tableAssignments[assignedTable] = [...tableAssignments[assignedTable], ...guestsToAssign]
+
+        // Prepare updates
+        guestsToAssign.forEach((guest) => {
+          updates.push({
+            id: guest.id,
+            table_nr: assignedTable,
+          })
+        })
+
+        // If there are remaining guests, try to assign them to other tables
+        const remainingGuests = group.slice(availableSpace)
+
+        if (remainingGuests.length > 0) {
+          // Find the next best table
+          for (const tableNumber of tableNumbers) {
+            if (tableNumber === assignedTable) continue
+
+            const capacity = TABLE_CAPACITIES[tableNumber]
+            const currentOccupancy = tableAssignments[tableNumber].length
+            const availableSpace = capacity - currentOccupancy
+
+            if (availableSpace > 0) {
+              const guestsToAssign = remainingGuests.slice(0, availableSpace)
+
+              // Add guests to this table
+              tableAssignments[tableNumber] = [...tableAssignments[tableNumber], ...guestsToAssign]
+
+              // Prepare updates
+              guestsToAssign.forEach((guest) => {
+                updates.push({
+                  id: guest.id,
+                  table_nr: tableNumber,
+                })
+              })
+
+              // Remove assigned guests from remaining
+              remainingGuests.splice(0, availableSpace)
+
+              if (remainingGuests.length === 0) break
+            }
+          }
+        }
+      }
+
+      // Batch update all guests
+      if (updates.length > 0) {
+        const { error: updateError } = await supabase.from("guest_manifest").upsert(updates)
+
+        if (updateError) throw updateError
+      }
+
+      // Refresh the data
+      await fetchGuests()
+
+      setStatusMessage({
+        type: "success",
+        message: `Successfully assigned ${updates.length} guests to tables.`,
+      })
+    } catch (error) {
+      console.error("Error assigning tables:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to assign tables. Please try again.",
+      })
+    } finally {
+      setAssigningTables(false)
+    }
+  }
+
+  // Clear all table assignments
+  const clearTableAssignments = async () => {
+    try {
+      setLoading(true)
+      setStatusMessage({
+        type: "info",
+        message: "Clearing table assignments...",
+      })
+
+      const { error } = await supabase.from("guest_manifest").update({ table_nr: null })
+
+      if (error) throw error
+
+      await fetchGuests()
+
+      setStatusMessage({
+        type: "success",
+        message: "All table assignments have been cleared.",
+      })
+    } catch (error) {
+      console.error("Error clearing table assignments:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to clear table assignments. Please try again.",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Add a cabin to a table manually
+  const addCabinToTable = async () => {
+    try {
+      if (!newTableNumber || !newCabinNumber) {
+        setStatusMessage({
+          type: "error",
+          message: "Table number and cabin number are required.",
+        })
+        return
+      }
+
+      const tableNumber = Number.parseInt(newTableNumber)
+
+      // Validate table number
+      if (!TABLE_CAPACITIES[tableNumber]) {
+        setStatusMessage({
+          type: "error",
+          message: `Table ${tableNumber} does not exist.`,
+        })
+        return
+      }
+
+      // Find the guest with this cabin number
+      const { data: cabinGuests, error: fetchError } = await supabase
+        .from("guest_manifest")
+        .select("*")
+        .eq("cabin_number", newCabinNumber)
+
+      if (fetchError) throw fetchError
+
+      if (!cabinGuests || cabinGuests.length === 0) {
+        setStatusMessage({
+          type: "error",
+          message: `Cabin ${newCabinNumber} not found.`,
+        })
+        return
+      }
+
+      // Check if the table has enough capacity
+      const currentTableGuests = guests.filter((g) => g.table_nr === tableNumber)
+      const cabinGuestsCount = cabinGuests.length
+
+      if (currentTableGuests.length + cabinGuestsCount > TABLE_CAPACITIES[tableNumber]) {
+        setStatusMessage({
+          type: "error",
+          message: `Table ${tableNumber} does not have enough capacity for cabin ${newCabinNumber}.`,
+        })
+        return
+      }
+
+      // Update the guests
+      const updates = cabinGuests.map((guest) => ({
+        id: guest.id,
+        table_nr: tableNumber,
+        nationality: newNationality || guest.nationality,
+      }))
+
+      const { error: updateError } = await supabase.from("guest_manifest").upsert(updates)
+
+      if (updateError) throw updateError
+
+      // Refresh the data
+      await fetchGuests()
+
+      // Clear the form
+      setNewTableNumber("")
+      setNewCabinNumber("")
+      setNewNationality("")
+
+      setStatusMessage({
+        type: "success",
+        message: `Cabin ${newCabinNumber} has been assigned to table ${tableNumber}.`,
+      })
+    } catch (error) {
+      console.error("Error adding cabin to table:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to add cabin to table. Please try again.",
+      })
+    }
+  }
+
+  // Remove a cabin from a table
+  const removeCabinFromTable = async (tableNumber: number, cabinNumber: string) => {
+    try {
+      setStatusMessage({
+        type: "info",
+        message: `Removing cabin ${cabinNumber} from table ${tableNumber}...`,
+      })
+
+      const { data: cabinGuests, error: fetchError } = await supabase
+        .from("guest_manifest")
+        .select("*")
+        .eq("cabin_number", cabinNumber)
+        .eq("table_nr", tableNumber)
+
+      if (fetchError) throw fetchError
+
+      if (!cabinGuests || cabinGuests.length === 0) {
+        setStatusMessage({
+          type: "error",
+          message: `Cabin ${cabinNumber} not found at table ${tableNumber}.`,
+        })
+        return
+      }
+
+      // Update the guests
+      const updates = cabinGuests.map((guest) => ({
+        id: guest.id,
+        table_nr: null,
+      }))
+
+      const { error: updateError } = await supabase.from("guest_manifest").upsert(updates)
+
+      if (updateError) throw updateError
+
+      // Refresh the data
+      await fetchGuests()
+
+      setStatusMessage({
+        type: "success",
+        message: `Cabin ${cabinNumber} has been removed from table ${tableNumber}.`,
+      })
+    } catch (error) {
+      console.error("Error removing cabin from table:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to remove cabin from table. Please try again.",
+      })
+    }
+  }
+
+  // Handle sign out
   function handleSignOut() {
-    // Clear authentication
     localStorage.removeItem("isAdminAuthenticated")
     router.push("/admin/login")
   }
+
+  // Filter table assignments based on search term
+  const filteredAssignments = tableAssignments.filter((assignment) => {
+    const searchLower = searchTerm.toLowerCase()
+    return (
+      assignment.table_number.toString().includes(searchLower) ||
+      assignment.cabins.some((cabin) => cabin.toLowerCase().includes(searchLower)) ||
+      assignment.nationality.toLowerCase().includes(searchLower) ||
+      assignment.booking_number.toLowerCase().includes(searchLower)
+    )
+  })
 
   if (loading) {
     return (
@@ -38,218 +522,225 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="flex">
-        {/* Sidebar */}
-        <div className="w-64 bg-white shadow-md min-h-screen p-4">
-          <div className="mb-6">
-            <h2 className="text-xl font-bold">De Willemstad</h2>
-            <p className="text-sm text-gray-500">Admin Portal</p>
+      <div className="p-4 bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+            <p className="text-gray-600">Table Assignment System</p>
+          </div>
+          <Button onClick={handleSignOut} variant="outline">
+            Sign Out
+          </Button>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto p-4 md:p-6">
+        {statusMessage && (
+          <Alert
+            className={`mb-6 ${
+              statusMessage.type === "success"
+                ? "bg-green-50 border-green-200 text-green-800"
+                : statusMessage.type === "error"
+                  ? "bg-red-50 border-red-200 text-red-800"
+                  : "bg-blue-50 border-blue-200 text-blue-800"
+            }`}
+          >
+            <AlertDescription>{statusMessage.message}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <h2 className="text-xl font-semibold mb-4">Control Panel</h2>
+
+          <div className="grid grid-cols-1 gap-4 mb-6">
+            <div>
+              <h3 className="font-medium mb-2">Table Assignment System</h3>
+              <div className="flex gap-2">
+                <Button onClick={assignTablesAutomatically} disabled={assigningTables} className="flex-1">
+                  {assigningTables ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Assigning...
+                    </>
+                  ) : (
+                    "Assign Tables Automatically"
+                  )}
+                </Button>
+
+                <Button onClick={clearTableAssignments} variant="outline" disabled={loading} className="flex-1">
+                  Clear All Assignments
+                </Button>
+              </div>
+            </div>
           </div>
 
-          <nav className="space-y-1">
-            <Button
-              variant={activeTab === "overview" ? "default" : "ghost"}
-              className="w-full justify-start"
-              onClick={() => setActiveTab("overview")}
-            >
-              <Home className="mr-2 h-4 w-4" />
-              Overview
-            </Button>
-            <Button
-              variant={activeTab === "meals" ? "default" : "ghost"}
-              className="w-full justify-start"
-              onClick={() => setActiveTab("meals")}
-            >
-              <Utensils className="mr-2 h-4 w-4" />
-              Meal Management
-            </Button>
-            <Button
-              variant={activeTab === "guests" ? "default" : "ghost"}
-              className="w-full justify-start"
-              onClick={() => setActiveTab("guests")}
-            >
-              <Users className="mr-2 h-4 w-4" />
-              Guest List
-            </Button>
-            <Button
-              variant={activeTab === "bookings" ? "default" : "ghost"}
-              className="w-full justify-start"
-              onClick={() => setActiveTab("bookings")}
-            >
-              <Calendar className="mr-2 h-4 w-4" />
-              Bookings
-            </Button>
-            <Button
-              variant={activeTab === "reports" ? "default" : "ghost"}
-              className="w-full justify-start"
-              onClick={() => setActiveTab("reports")}
-            >
-              <BarChart3 className="mr-2 h-4 w-4" />
-              Reports
-            </Button>
-            <Button
-              variant={activeTab === "settings" ? "default" : "ghost"}
-              className="w-full justify-start"
-              onClick={() => setActiveTab("settings")}
-            >
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
-            </Button>
-          </nav>
+          <div className="border-t pt-4">
+            <h3 className="font-medium mb-3">Assignment Summary</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <p className="text-sm text-blue-600">Total Guests</p>
+                <p className="text-2xl font-bold">{guests.length}</p>
+              </div>
+
+              <div className="bg-green-50 p-3 rounded-lg">
+                <p className="text-sm text-green-600">Assigned Guests</p>
+                <p className="text-2xl font-bold">{guests.filter((g) => g.table_nr).length}</p>
+              </div>
+
+              <div className="bg-amber-50 p-3 rounded-lg">
+                <p className="text-sm text-amber-600">Tables Used</p>
+                <p className="text-2xl font-bold">{new Set(guests.map((g) => g.table_nr).filter(Boolean)).size}</p>
+              </div>
+
+              <div className="bg-purple-50 p-3 rounded-lg">
+                <p className="text-sm text-purple-600">Booking Groups</p>
+                <p className="text-2xl font-bold">{new Set(guests.map((g) => g.booking_number)).size}</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Main content */}
-        <div className="flex-1 p-8">
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-              <p className="text-gray-600">Welcome, Admin</p>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+              <h2 className="text-xl font-semibold mb-4">Floor Plan</h2>
+              <div className="border rounded-lg p-4 overflow-auto">
+                <FloorPlan tableCapacities={TABLE_CAPACITIES} tableAssignments={tableAssignments} />
+              </div>
             </div>
-            <Button onClick={handleSignOut} variant="outline">
-              Sign Out
-            </Button>
           </div>
 
-          {/* Tab content */}
-          <div className="bg-white rounded-lg shadow p-6">
-            {activeTab === "overview" && (
-              <div>
-                <h2 className="text-xl font-semibold mb-4">Overview</h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <h3 className="font-medium">Total Bookings</h3>
-                    <p className="text-2xl font-bold">124</p>
-                  </div>
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <h3 className="font-medium">Meals Selected</h3>
-                    <p className="text-2xl font-bold">342</p>
-                  </div>
-                  <div className="bg-purple-50 p-4 rounded-lg">
-                    <h3 className="font-medium">Special Requests</h3>
-                    <p className="text-2xl font-bold">28</p>
-                  </div>
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+              <h2 className="text-xl font-semibold mb-4">Add Cabin to Table</h2>
+
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="table-number">Table Number</Label>
+                  <Input
+                    id="table-number"
+                    placeholder="e.g. 1"
+                    value={newTableNumber}
+                    onChange={(e) => setNewTableNumber(e.target.value)}
+                  />
                 </div>
 
-                <h3 className="text-lg font-medium mt-8 mb-4">Recent Activity</h3>
-                <div className="border rounded-lg divide-y">
-                  {[1, 2, 3, 4, 5].map((item) => (
-                    <div key={item} className="p-3 flex items-center">
-                      <div className="bg-gray-100 rounded-full p-2 mr-3">
-                        <FileText className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <p className="font-medium">
-                          Cabin {Math.floor(Math.random() * 100) + 100} submitted meal choices
-                        </p>
-                        <p className="text-sm text-gray-500">{Math.floor(Math.random() * 24)} hours ago</p>
-                      </div>
-                    </div>
-                  ))}
+                <div>
+                  <Label htmlFor="cabin-number">Cabin Number</Label>
+                  <Input
+                    id="cabin-number"
+                    placeholder="e.g. 101"
+                    value={newCabinNumber}
+                    onChange={(e) => setNewCabinNumber(e.target.value)}
+                  />
                 </div>
+
+                <div>
+                  <Label htmlFor="nationality">Nationality (Optional)</Label>
+                  <Input
+                    id="nationality"
+                    placeholder="e.g. German"
+                    value={newNationality}
+                    onChange={(e) => setNewNationality(e.target.value)}
+                  />
+                </div>
+
+                <Button onClick={addCabinToTable} className="w-full">
+                  Add
+                </Button>
               </div>
-            )}
+            </div>
+          </div>
+        </div>
 
-            {activeTab === "meals" && (
-              <div>
-                <h2 className="text-xl font-semibold mb-4">Meal Management</h2>
-                <Tabs defaultValue="current">
-                  <TabsList className="mb-4">
-                    <TabsTrigger value="current">Current Menu</TabsTrigger>
-                    <TabsTrigger value="upcoming">Upcoming Menu</TabsTrigger>
-                    <TabsTrigger value="special">Special Diets</TabsTrigger>
-                  </TabsList>
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Table Assignments</h2>
 
-                  <TabsContent value="current" className="space-y-4">
-                    <div className="border rounded-lg">
-                      <div className="bg-gray-50 p-3 font-medium grid grid-cols-4 gap-4">
-                        <div>Meal Option</div>
-                        <div>Description</div>
-                        <div>Category</div>
-                        <div>Count</div>
-                      </div>
-                      <div className="divide-y">
-                        {[
-                          { name: "Beef Wellington", desc: "with Roasted Vegetables", category: "Meat", count: 78 },
-                          { name: "Grilled Salmon", desc: "with Lemon Butter Sauce", category: "Fish", count: 64 },
-                          { name: "Vegetarian Pasta", desc: "Primavera", category: "Vegetarian", count: 42 },
-                          { name: "Chicken Cordon Bleu", desc: "with Mashed Potatoes", category: "Poultry", count: 58 },
-                        ].map((meal, i) => (
-                          <div key={i} className="p-3 grid grid-cols-4 gap-4">
-                            <div className="font-medium">{meal.name}</div>
-                            <div>{meal.desc}</div>
-                            <div>{meal.category}</div>
-                            <div>{meal.count}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </TabsContent>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search by table, cabin, nationality..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 w-64"
+              />
+            </div>
+          </div>
 
-                  <TabsContent value="upcoming">
-                    <p>Upcoming menu content would go here.</p>
-                  </TabsContent>
-
-                  <TabsContent value="special">
-                    <p>Special dietary requirements content would go here.</p>
-                  </TabsContent>
-                </Tabs>
-              </div>
-            )}
-
-            {activeTab === "guests" && (
-              <div>
-                <h2 className="text-xl font-semibold mb-4">Guest List</h2>
-                <div className="border rounded-lg">
-                  <div className="bg-gray-50 p-3 font-medium grid grid-cols-4 gap-4">
-                    <div>Cabin</div>
-                    <div>Guest Name</div>
-                    <div>Dietary Restrictions</div>
-                    <div>Meal Selected</div>
-                  </div>
-                  <div className="divide-y">
-                    {Array.from({ length: 10 }).map((_, i) => (
-                      <div key={i} className="p-3 grid grid-cols-4 gap-4">
-                        <div>{Math.floor(Math.random() * 100) + 100}</div>
-                        <div>Guest {i + 1}</div>
-                        <div>
-                          {Math.random() > 0.7
-                            ? "None"
-                            : ["Vegetarian", "Gluten-free", "Nut Allergy"][Math.floor(Math.random() * 3)]}
+          <div className="border rounded-lg overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Table Number
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cabin Numbers
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Nationality
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Booking Number
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredAssignments.length > 0 ? (
+                  filteredAssignments.map((assignment, index) => (
+                    <tr key={index}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {assignment.table_number}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <div className="flex flex-wrap gap-1">
+                          {assignment.cabins.map((cabin) => (
+                            <Badge
+                              key={cabin}
+                              className="flex items-center gap-1 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                            >
+                              {cabin}
+                              <button
+                                onClick={() => removeCabinFromTable(assignment.table_number, cabin)}
+                                className="ml-1 text-blue-500 hover:text-blue-700"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
                         </div>
-                        <div>
-                          {
-                            ["Beef Wellington", "Grilled Salmon", "Vegetarian Pasta", "Chicken Cordon Bleu"][
-                              Math.floor(Math.random() * 4)
-                            ]
-                          }
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === "bookings" && (
-              <div>
-                <h2 className="text-xl font-semibold mb-4">Bookings</h2>
-                <p>Booking management content would go here.</p>
-              </div>
-            )}
-
-            {activeTab === "reports" && (
-              <div>
-                <h2 className="text-xl font-semibold mb-4">Reports</h2>
-                <p>Reporting and analytics content would go here.</p>
-              </div>
-            )}
-
-            {activeTab === "settings" && (
-              <div>
-                <h2 className="text-xl font-semibold mb-4">Settings</h2>
-                <p>System settings content would go here.</p>
-              </div>
-            )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{assignment.nationality}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{assignment.booking_number}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-blue-600 hover:text-blue-800"
+                          onClick={() => {
+                            setNewTableNumber(assignment.table_number.toString())
+                            setNewNationality(assignment.nationality)
+                          }}
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add Cabin
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                      {searchTerm ? "No matching assignments found." : "No table assignments yet."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
