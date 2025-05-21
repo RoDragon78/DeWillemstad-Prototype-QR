@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { clientStorage } from "@/utils/client-storage"
 
 interface Guest {
   name: string
@@ -50,17 +51,22 @@ export function MealSelectionForm({ cabinNumber, guests }: MealSelectionFormProp
       return
     }
 
-    // Prepare meal selections data
-    const mealSelections = guests.map((guest, index) => ({
-      guestName: guest.name,
-      mealOption: MEAL_OPTIONS.find((option) => option.id === guestMeals[index])?.name || "",
-    }))
+    try {
+      // Prepare meal selections data
+      const mealSelections = guests.map((guest, index) => ({
+        guestName: guest.name,
+        mealOption: MEAL_OPTIONS.find((option) => option.id === guestMeals[index])?.name || "",
+      }))
 
-    // Store meal selections in session storage
-    sessionStorage.setItem("mealSelections", JSON.stringify(mealSelections))
+      // Store meal selections in session storage
+      clientStorage.setSessionItem("mealSelections", JSON.stringify(mealSelections))
 
-    // Navigate to confirmation page
-    router.push("/confirmation")
+      // Navigate to confirmation page
+      router.push("/confirmation")
+    } catch (error) {
+      console.error("Error storing meal selections:", error)
+      setIsLoading(false)
+    }
   }
 
   return (

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { clientStorage } from "@/utils/client-storage"
 
 interface MealSelection {
   guestName: string
@@ -27,9 +28,9 @@ export function ConfirmationDetails({ cabinNumber, mealSelections }: Confirmatio
       await new Promise((resolve) => setTimeout(resolve, 1500))
 
       // Clear session storage after successful submission
-      sessionStorage.removeItem("cabinNumber")
-      sessionStorage.removeItem("guests")
-      sessionStorage.removeItem("mealSelections")
+      clientStorage.removeSessionItem("cabinNumber")
+      clientStorage.removeSessionItem("guests")
+      clientStorage.removeSessionItem("mealSelections")
 
       setIsSuccess(true)
     } catch (error) {

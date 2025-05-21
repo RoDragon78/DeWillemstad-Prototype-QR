@@ -3,14 +3,16 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { GuestSelectionForm } from "@/components/guest-selection-form"
+import { clientStorage } from "@/utils/client-storage"
 
 export default function SelectGuestsPage() {
   const router = useRouter()
   const [cabinNumber, setCabinNumber] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     // Get cabin number from session storage
-    const storedCabinNumber = sessionStorage.getItem("cabinNumber")
+    const storedCabinNumber = clientStorage.getSessionItem("cabinNumber")
 
     if (!storedCabinNumber) {
       // Redirect back to home if no cabin number is found
@@ -19,9 +21,10 @@ export default function SelectGuestsPage() {
     }
 
     setCabinNumber(storedCabinNumber)
+    setIsLoading(false)
   }, [router])
 
-  if (!cabinNumber) {
+  if (isLoading) {
     return <div className="flex min-h-screen items-center justify-center">Loading...</div>
   }
 
@@ -33,7 +36,7 @@ export default function SelectGuestsPage() {
           <p className="mt-2 text-gray-600">Cabin {cabinNumber}</p>
         </div>
 
-        <GuestSelectionForm cabinNumber={cabinNumber} />
+        <GuestSelectionForm cabinNumber={cabinNumber || ""} />
       </div>
     </div>
   )

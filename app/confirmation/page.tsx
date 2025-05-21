@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ConfirmationDetails } from "@/components/confirmation-details"
+import { clientStorage } from "@/utils/client-storage"
 
 interface MealSelection {
   guestName: string
@@ -13,11 +14,12 @@ export default function ConfirmationPage() {
   const router = useRouter()
   const [cabinNumber, setCabinNumber] = useState<string | null>(null)
   const [mealSelections, setMealSelections] = useState<MealSelection[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     // Get cabin number and meal selections from session storage
-    const storedCabinNumber = sessionStorage.getItem("cabinNumber")
-    const storedMealSelections = sessionStorage.getItem("mealSelections")
+    const storedCabinNumber = clientStorage.getSessionItem("cabinNumber")
+    const storedMealSelections = clientStorage.getSessionItem("mealSelections")
 
     if (!storedCabinNumber || !storedMealSelections) {
       // Redirect back to home if data is missing
@@ -27,9 +29,10 @@ export default function ConfirmationPage() {
 
     setCabinNumber(storedCabinNumber)
     setMealSelections(JSON.parse(storedMealSelections))
+    setIsLoading(false)
   }, [router])
 
-  if (!cabinNumber || mealSelections.length === 0) {
+  if (isLoading) {
     return <div className="flex min-h-screen items-center justify-center">Loading...</div>
   }
 
@@ -41,7 +44,7 @@ export default function ConfirmationPage() {
           <p className="mt-2 text-gray-600">Cabin {cabinNumber}</p>
         </div>
 
-        <ConfirmationDetails cabinNumber={cabinNumber} mealSelections={mealSelections} />
+        <ConfirmationDetails cabinNumber={cabinNumber || ""} mealSelections={mealSelections} />
       </div>
     </div>
   )

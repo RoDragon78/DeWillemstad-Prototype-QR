@@ -36,7 +36,8 @@ const TABLE_POSITIONS: Record<
   13: { x: 450, y: 380, width: 70, height: 70, shape: "circle" },
   14: { x: 320, y: 480, width: 160, height: 60, shape: "rect" },
 
-  15: { x: 550, y: 450, width: 60, height: 120, shape: "rect" },
+  // Fix the overlapping tables
+  15: { x: 550, y: 330, width: 60, height: 120, shape: "rect" },
   16: { x: 700, y: 450, width: 80, height: 80, shape: "rect" },
   17: { x: 700, y: 330, width: 120, height: 60, shape: "rect" },
   18: { x: 700, y: 240, width: 120, height: 60, shape: "rect" },
@@ -206,7 +207,7 @@ export function FloorPlan({ tableCapacities, tableAssignments }: FloorPlanProps)
 
           <rect x="180" y="0" width="15" height="15" fill="rgb(191, 219, 254)" />
           <text x="200" y="12" fontSize="12" fill="rgb(55, 65, 81)">
-            &lt; 100% Full
+            50-99% Full
           </text>
 
           <rect x="280" y="0" width="15" height="15" fill="rgb(147, 197, 253)" />

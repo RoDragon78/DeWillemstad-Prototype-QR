@@ -1,15 +1,22 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { CommandGroup } from "@/components/ui/command"
+
+import { CommandEmpty } from "@/components/ui/command"
+
+import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Trash2, Plus, Search, RefreshCw } from "lucide-react"
+import { Trash2, Plus, Search, RefreshCw, Check, User } from "lucide-react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { FloorPlan } from "@/components/floor-plan"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandList, CommandInput, CommandItem } from "@/components/ui/command"
+import { clientStorage } from "@/utils/client-storage"
 
 // Table capacity configuration based on the floor plan
 const TABLE_CAPACITIES = {
@@ -43,7 +50,13 @@ interface Guest {
   booking_number: string
   nationality: string
   table_nr?: number
-  name?: string
+  name: string // Make name required
+}
+
+// Add a new interface for cabin suggestions
+interface CabinSuggestion {
+  cabin_number: string
+  guests: Guest[]
 }
 
 interface TableAssignment {
@@ -72,15 +85,74 @@ export default function DashboardPage() {
   const [newCabinNumber, setNewCabinNumber] = useState("")
   const [newNationality, setNewNationality] = useState("")
 
+  // Add state for cabin suggestions
+  const [cabinSuggestions, setCabinSuggestions] = useState<CabinSuggestion[]>([])
+  const [cabinSearchOpen, setCabinSearchOpen] = useState(false)
+  const [selectedCabinGuests, setSelectedCabinGuests] = useState<Guest[]>([])
+
   // Check authentication and fetch data
   useEffect(() => {
-    const isAuthenticated = localStorage.getItem("isAdminAuthenticated") === "true"
+    const isAuthenticated = clientStorage.getLocalItem("isAdminAuthenticated") === "true"
     if (!isAuthenticated) {
       router.push("/admin/login")
     } else {
       fetchGuests()
     }
   }, [router])
+
+  // Add function to search for cabins
+  const searchCabins = useCallback(
+    async (searchTerm: string) => {
+      if (!searchTerm || searchTerm.length < 1) {
+        setCabinSuggestions([])
+        return
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("guest_manifest")
+          .select("*")
+          .ilike("cabin_number", `%${searchTerm}%`)
+          .order("cabin_number", { ascending: true })
+
+        if (error) throw error
+
+        // Group by cabin number
+        const cabinGroups: Record<string, Guest[]> = {}
+        data?.forEach((guest) => {
+          if (!cabinGroups[guest.cabin_number]) {
+            cabinGroups[guest.cabin_number] = []
+          }
+          cabinGroups[guest.cabin_number].push(guest)
+        })
+
+        // Convert to suggestions
+        const suggestions: CabinSuggestion[] = Object.entries(cabinGroups).map(([cabin, guests]) => ({
+          cabin_number: cabin,
+          guests,
+        }))
+
+        setCabinSuggestions(suggestions)
+      } catch (error) {
+        console.error("Error searching cabins:", error)
+      }
+    },
+    [supabase],
+  )
+
+  // Add function to handle cabin selection
+  const handleCabinSelect = (cabin: CabinSuggestion) => {
+    setNewCabinNumber(cabin.cabin_number)
+    setSelectedCabinGuests(cabin.guests)
+
+    // If all guests in the cabin have the same nationality, pre-fill it
+    const nationalities = new Set(cabin.guests.map((g) => g.nationality))
+    if (nationalities.size === 1) {
+      setNewNationality(cabin.guests[0].nationality)
+    }
+
+    setCabinSearchOpen(false)
+  }
 
   // Fetch all guests
   const fetchGuests = async () => {
@@ -93,7 +165,30 @@ export default function DashboardPage() {
 
       setGuests(data || [])
       processTableAssignments(data || [])
+
+      // Set up real-time subscription for guest_manifest table
+      const subscription = supabase
+        .channel("guest_manifest_changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "guest_manifest",
+          },
+          (payload) => {
+            console.log("Change received!", payload)
+            fetchGuests() // Refresh data when changes occur
+          },
+        )
+        .subscribe()
+
       setLoading(false)
+
+      // Return cleanup function
+      return () => {
+        subscription.unsubscribe()
+      }
     } catch (error) {
       console.error("Error fetching guests:", error)
       setStatusMessage({
@@ -172,18 +267,28 @@ export default function DashboardPage() {
         message: "Assigning tables automatically...",
       })
 
-      // First, clear existing table assignments
-      const { error: clearError } = await supabase.from("guest_manifest").update({ table_nr: null })
+      // First, clear existing table assignments by updating each guest individually
+      const { data: allGuests, error: fetchError } = await supabase.from("guest_manifest").select("id")
 
-      if (clearError) throw clearError
+      if (fetchError) throw fetchError
+
+      // Update each guest individually to clear table assignments
+      for (const guest of allGuests || []) {
+        const { error: clearError } = await supabase
+          .from("guest_manifest")
+          .update({ table_nr: null })
+          .eq("id", guest.id)
+
+        if (clearError) throw clearError
+      }
 
       // Fetch all guests again to ensure we have the latest data
-      const { data: guests, error: fetchError } = await supabase
+      const { data: guests, error: fetchGuestsError } = await supabase
         .from("guest_manifest")
         .select("*")
         .order("booking_number", { ascending: true })
 
-      if (fetchError) throw fetchError
+      if (fetchGuestsError) throw fetchGuestsError
       if (!guests || guests.length === 0) {
         setStatusMessage({
           type: "info",
@@ -192,6 +297,8 @@ export default function DashboardPage() {
         setAssigningTables(false)
         return
       }
+
+      console.log("Starting automatic table assignment with", guests.length, "guests")
 
       // Group guests by booking number and nationality
       const groupedGuests: Record<string, Guest[]> = {}
@@ -204,14 +311,13 @@ export default function DashboardPage() {
         groupedGuests[key].push(guest)
       })
 
+      console.log("Grouped guests into", Object.keys(groupedGuests).length, "groups")
+
       // Sort groups by size (largest first) for better table utilization
       const sortedGroups = Object.values(groupedGuests).sort((a, b) => b.length - a.length)
 
-      // Start assigning tables from table 20 down to 1
-      const tableNumbers = Object.keys(TABLE_CAPACITIES)
-        .map(Number)
-        .sort((a, b) => b - a) // Sort in descending order (20 to 1)
-
+      // Start assigning tables
+      const tableNumbers = Object.keys(TABLE_CAPACITIES).map(Number)
       const tableAssignments: Record<number, Guest[]> = {}
       const updates: Partial<Guest>[] = []
 
@@ -220,9 +326,12 @@ export default function DashboardPage() {
         tableAssignments[tableNumber] = []
       })
 
+      console.log("Initialized table assignments for", tableNumbers.length, "tables")
+
       // Assign groups to tables
       for (const group of sortedGroups) {
         const groupSize = group.length
+        console.log("Processing group with", groupSize, "guests")
 
         // Find a table that can accommodate this group
         let assignedTable: number | null = null
@@ -233,6 +342,7 @@ export default function DashboardPage() {
 
           if (currentOccupancy + groupSize <= capacity) {
             assignedTable = tableNumber
+            console.log("Found table", tableNumber, "with capacity", capacity, "current occupancy", currentOccupancy)
             break
           }
         }
@@ -254,6 +364,7 @@ export default function DashboardPage() {
           }
 
           assignedTable = bestTable
+          console.log("No table can fit entire group, using table", bestTable, "with", maxAvailableSpace, "spaces")
         }
 
         // Assign as many guests as possible to this table
@@ -261,6 +372,8 @@ export default function DashboardPage() {
         const currentOccupancy = tableAssignments[assignedTable].length
         const availableSpace = capacity - currentOccupancy
         const guestsToAssign = group.slice(0, availableSpace)
+
+        console.log("Assigning", guestsToAssign.length, "guests to table", assignedTable)
 
         // Add guests to this table
         tableAssignments[assignedTable] = [...tableAssignments[assignedTable], ...guestsToAssign]
@@ -277,6 +390,8 @@ export default function DashboardPage() {
         const remainingGuests = group.slice(availableSpace)
 
         if (remainingGuests.length > 0) {
+          console.log("Have", remainingGuests.length, "remaining guests to assign")
+
           // Find the next best table
           for (const tableNumber of tableNumbers) {
             if (tableNumber === assignedTable) continue
@@ -287,6 +402,7 @@ export default function DashboardPage() {
 
             if (availableSpace > 0) {
               const guestsToAssign = remainingGuests.slice(0, availableSpace)
+              console.log("Assigning", guestsToAssign.length, "remaining guests to table", tableNumber)
 
               // Add guests to this table
               tableAssignments[tableNumber] = [...tableAssignments[tableNumber], ...guestsToAssign]
@@ -308,11 +424,22 @@ export default function DashboardPage() {
         }
       }
 
+      console.log("Prepared", updates.length, "updates")
+
       // Batch update all guests
       if (updates.length > 0) {
-        const { error: updateError } = await supabase.from("guest_manifest").upsert(updates)
+        // Update each guest individually to avoid batch issues
+        for (const update of updates) {
+          const { error: updateError } = await supabase
+            .from("guest_manifest")
+            .update({ table_nr: update.table_nr })
+            .eq("id", update.id)
 
-        if (updateError) throw updateError
+          if (updateError) {
+            console.error("Error updating guest:", updateError)
+            throw updateError
+          }
+        }
       }
 
       // Refresh the data
@@ -342,9 +469,20 @@ export default function DashboardPage() {
         message: "Clearing table assignments...",
       })
 
-      const { error } = await supabase.from("guest_manifest").update({ table_nr: null })
+      // Get all guests first
+      const { data: allGuests, error: fetchError } = await supabase.from("guest_manifest").select("id")
 
-      if (error) throw error
+      if (fetchError) throw fetchError
+
+      // Update each guest individually to clear table assignments
+      for (const guest of allGuests || []) {
+        const { error: clearError } = await supabase
+          .from("guest_manifest")
+          .update({ table_nr: null })
+          .eq("id", guest.id)
+
+        if (clearError) throw clearError
+      }
 
       await fetchGuests()
 
@@ -414,23 +552,39 @@ export default function DashboardPage() {
       }
 
       // Update the guests
-      const updates = cabinGuests.map((guest) => ({
-        id: guest.id,
-        table_nr: tableNumber,
-        nationality: newNationality || guest.nationality,
-      }))
+      for (const guest of cabinGuests) {
+        const { error: updateError } = await supabase
+          .from("guest_manifest")
+          .update({
+            table_nr: tableNumber,
+            nationality: newNationality || guest.nationality,
+          })
+          .eq("id", guest.id)
 
-      const { error: updateError } = await supabase.from("guest_manifest").upsert(updates)
+        if (updateError) throw updateError
+      }
 
-      if (updateError) throw updateError
+      // Optimistic UI update
+      const updatedGuests = [...guests]
+      cabinGuests.forEach((guest) => {
+        const index = updatedGuests.findIndex((g) => g.id === guest.id)
+        if (index !== -1) {
+          updatedGuests[index] = {
+            ...updatedGuests[index],
+            table_nr: tableNumber,
+            nationality: newNationality || guest.nationality,
+          }
+        }
+      })
 
-      // Refresh the data
-      await fetchGuests()
+      setGuests(updatedGuests)
+      processTableAssignments(updatedGuests)
 
       // Clear the form
       setNewTableNumber("")
       setNewCabinNumber("")
       setNewNationality("")
+      setSelectedCabinGuests([])
 
       setStatusMessage({
         type: "success",
@@ -442,6 +596,8 @@ export default function DashboardPage() {
         type: "error",
         message: "Failed to add cabin to table. Please try again.",
       })
+      // Refresh data to revert optimistic update if there was an error
+      fetchGuests()
     }
   }
 
@@ -469,15 +625,15 @@ export default function DashboardPage() {
         return
       }
 
-      // Update the guests
-      const updates = cabinGuests.map((guest) => ({
-        id: guest.id,
-        table_nr: null,
-      }))
+      // Update each guest individually
+      for (const guest of cabinGuests) {
+        const { error: updateError } = await supabase
+          .from("guest_manifest")
+          .update({ table_nr: null })
+          .eq("id", guest.id)
 
-      const { error: updateError } = await supabase.from("guest_manifest").upsert(updates)
-
-      if (updateError) throw updateError
+        if (updateError) throw updateError
+      }
 
       // Refresh the data
       await fetchGuests()
@@ -497,7 +653,7 @@ export default function DashboardPage() {
 
   // Handle sign out
   function handleSignOut() {
-    localStorage.removeItem("isAdminAuthenticated")
+    clientStorage.removeLocalItem("isAdminAuthenticated")
     router.push("/admin/login")
   }
 
@@ -627,13 +783,61 @@ export default function DashboardPage() {
 
                 <div>
                   <Label htmlFor="cabin-number">Cabin Number</Label>
-                  <Input
-                    id="cabin-number"
-                    placeholder="e.g. 101"
-                    value={newCabinNumber}
-                    onChange={(e) => setNewCabinNumber(e.target.value)}
-                  />
+                  <div className="relative mt-1">
+                    <Popover open={cabinSearchOpen} onOpenChange={setCabinSearchOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={cabinSearchOpen}
+                          className="w-full justify-between"
+                        >
+                          {newCabinNumber || "Select cabin..."}
+                          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-full p-0">
+                        <Command>
+                          <CommandInput placeholder="Search cabins..." onValueChange={(value) => searchCabins(value)} />
+                          <CommandList>
+                            <CommandEmpty>No cabins found.</CommandEmpty>
+                            <CommandGroup>
+                              {cabinSuggestions.map((cabin) => (
+                                <CommandItem
+                                  key={cabin.cabin_number}
+                                  value={cabin.cabin_number}
+                                  onSelect={() => handleCabinSelect(cabin)}
+                                >
+                                  <Check
+                                    className={`mr-2 h-4 w-4 ${
+                                      newCabinNumber === cabin.cabin_number ? "opacity-100" : "opacity-0"
+                                    }`}
+                                  />
+                                  {cabin.cabin_number} - {cabin.guests.length} guest(s)
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
+
+                {selectedCabinGuests.length > 0 && (
+                  <div className="mt-2 p-3 bg-gray-50 rounded-md">
+                    <h4 className="text-sm font-medium mb-2">Selected Guests:</h4>
+                    <ul className="space-y-1">
+                      {selectedCabinGuests.map((guest) => (
+                        <li key={guest.id} className="text-sm flex items-center">
+                          <User className="h-3 w-3 mr-1 text-gray-400" />
+                          {guest.name || "Unknown"}
+                          {guest.nationality && <span className="text-gray-500 ml-1">({guest.nationality})</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 <div>
                   <Label htmlFor="nationality">Nationality (Optional)</Label>

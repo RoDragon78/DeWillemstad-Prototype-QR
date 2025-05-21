@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
+import { clientStorage } from "@/utils/client-storage"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -24,7 +25,7 @@ export default function LoginPage() {
     // Simple authentication - just check if password is "admin"
     if (password === "admin") {
       // Store authentication in localStorage
-      localStorage.setItem("isAdminAuthenticated", "true")
+      clientStorage.setLocalItem("isAdminAuthenticated", "true")
       // Redirect to dashboard
       router.push("/admin/dashboard")
     } else {

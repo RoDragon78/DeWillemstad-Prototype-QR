@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { clientStorage } from "@/utils/client-storage"
 
 interface GuestSelectionFormProps {
   cabinNumber: string
@@ -39,11 +40,16 @@ export function GuestSelectionForm({ cabinNumber }: GuestSelectionFormProps) {
     e.preventDefault()
     setIsLoading(true)
 
-    // Store guest information in session storage
-    sessionStorage.setItem("guests", JSON.stringify(guests))
+    try {
+      // Store guest information in session storage
+      clientStorage.setSessionItem("guests", JSON.stringify(guests))
 
-    // Navigate to meal selection page
-    router.push("/meal-selection")
+      // Navigate to meal selection page
+      router.push("/meal-selection")
+    } catch (error) {
+      console.error("Error storing guest information:", error)
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -92,7 +98,7 @@ export function GuestSelectionForm({ cabinNumber }: GuestSelectionFormProps) {
         </Button>
 
         <Button type="submit" disabled={isLoading}>
-          Continue to Meal Selection
+          {isLoading ? "Processing..." : "Continue to Meal Selection"}
         </Button>
       </div>
     </form>

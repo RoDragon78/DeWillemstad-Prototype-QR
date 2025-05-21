@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { MealSelectionForm } from "@/components/meal-selection-form"
+import { clientStorage } from "@/utils/client-storage"
 
 interface Guest {
   name: string
@@ -13,11 +14,12 @@ export default function MealSelectionPage() {
   const router = useRouter()
   const [cabinNumber, setCabinNumber] = useState<string | null>(null)
   const [guests, setGuests] = useState<Guest[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     // Get cabin number and guests from session storage
-    const storedCabinNumber = sessionStorage.getItem("cabinNumber")
-    const storedGuests = sessionStorage.getItem("guests")
+    const storedCabinNumber = clientStorage.getSessionItem("cabinNumber")
+    const storedGuests = clientStorage.getSessionItem("guests")
 
     if (!storedCabinNumber || !storedGuests) {
       // Redirect back to home if data is missing
@@ -27,9 +29,10 @@ export default function MealSelectionPage() {
 
     setCabinNumber(storedCabinNumber)
     setGuests(JSON.parse(storedGuests))
+    setIsLoading(false)
   }, [router])
 
-  if (!cabinNumber || guests.length === 0) {
+  if (isLoading) {
     return <div className="flex min-h-screen items-center justify-center">Loading...</div>
   }
 
@@ -41,7 +44,7 @@ export default function MealSelectionPage() {
           <p className="mt-2 text-gray-600">Cabin {cabinNumber}</p>
         </div>
 
-        <MealSelectionForm cabinNumber={cabinNumber} guests={guests} />
+        <MealSelectionForm cabinNumber={cabinNumber || ""} guests={guests} />
       </div>
     </div>
   )

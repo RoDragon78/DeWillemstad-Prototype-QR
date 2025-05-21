@@ -6,6 +6,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { clientStorage } from "@/utils/client-storage"
 
 export function SimpleCabinForm() {
   const [cabinNumber, setCabinNumber] = useState("")
@@ -18,11 +19,16 @@ export function SimpleCabinForm() {
 
     // Simple validation
     if (cabinNumber.trim()) {
-      // Store cabin number in session storage for later use
-      sessionStorage.setItem("cabinNumber", cabinNumber)
+      try {
+        // Store cabin number in session storage for later use
+        clientStorage.setSessionItem("cabinNumber", cabinNumber)
 
-      // Navigate to the guest selection page
-      router.push("/select-guests")
+        // Navigate to the guest selection page
+        router.push("/select-guests")
+      } catch (error) {
+        console.error("Error storing cabin number:", error)
+        setIsLoading(false)
+      }
     } else {
       setIsLoading(false)
     }
@@ -45,7 +51,7 @@ export function SimpleCabinForm() {
         />
       </div>
       <Button type="submit" className="w-full" disabled={isLoading}>
-        Continue
+        {isLoading ? "Processing..." : "Continue"}
       </Button>
     </form>
   )
