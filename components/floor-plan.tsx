@@ -26,29 +26,38 @@ interface FloorPlanProps {
   guests: Guest[]
 }
 
-// Table positions based on the floor plan image - removed tables 5 and 15
+// Reorganized table positions in clear columns with larger sizes
 const TABLE_POSITIONS: Record<
   number,
   { x: number; y: number; width: number; height: number; shape: "rect" | "circle" }
 > = {
-  20: { x: 650, y: 60, width: 80, height: 80, shape: "rect" },
-  19: { x: 650, y: 150, width: 120, height: 60, shape: "rect" },
-  18: { x: 650, y: 240, width: 120, height: 60, shape: "rect" },
-  17: { x: 650, y: 330, width: 120, height: 60, shape: "rect" },
-  16: { x: 650, y: 450, width: 80, height: 80, shape: "rect" },
-  14: { x: 320, y: 480, width: 160, height: 60, shape: "rect" },
-  13: { x: 450, y: 380, width: 70, height: 70, shape: "circle" },
-  12: { x: 450, y: 280, width: 80, height: 80, shape: "rect" },
-  11: { x: 450, y: 170, width: 70, height: 70, shape: "circle" },
-  10: { x: 450, y: 60, width: 70, height: 70, shape: "circle" },
-  9: { x: 250, y: 60, width: 70, height: 70, shape: "circle" },
-  8: { x: 250, y: 170, width: 70, height: 70, shape: "circle" },
-  7: { x: 280, y: 300, width: 80, height: 80, shape: "rect" },
-  6: { x: 280, y: 400, width: 120, height: 60, shape: "rect" },
-  4: { x: 60, y: 320, width: 80, height: 80, shape: "rect" },
-  3: { x: 60, y: 220, width: 120, height: 60, shape: "rect" },
-  2: { x: 60, y: 150, width: 120, height: 60, shape: "rect" },
-  1: { x: 60, y: 60, width: 80, height: 80, shape: "rect" },
+  // Left column (tables 1-4)
+  1: { x: 50, y: 50, width: 100, height: 100, shape: "rect" },
+  2: { x: 50, y: 170, width: 140, height: 70, shape: "rect" },
+  3: { x: 50, y: 260, width: 140, height: 70, shape: "rect" },
+  4: { x: 50, y: 350, width: 100, height: 100, shape: "rect" },
+
+  // Middle-left column (tables 6-9)
+  6: { x: 250, y: 400, width: 140, height: 70, shape: "rect" },
+  7: { x: 250, y: 300, width: 100, height: 100, shape: "rect" },
+  8: { x: 250, y: 170, width: 90, height: 90, shape: "circle" },
+  9: { x: 250, y: 50, width: 90, height: 90, shape: "circle" },
+
+  // Middle-right column (tables 10-13)
+  10: { x: 450, y: 50, width: 90, height: 90, shape: "circle" },
+  11: { x: 450, y: 170, width: 90, height: 90, shape: "circle" },
+  12: { x: 450, y: 300, width: 100, height: 100, shape: "rect" },
+  13: { x: 450, y: 400, width: 90, height: 90, shape: "circle" },
+
+  // Bottom center (table 14)
+  14: { x: 320, y: 500, width: 160, height: 70, shape: "rect" },
+
+  // Right column (tables 16-20)
+  16: { x: 650, y: 450, width: 100, height: 100, shape: "rect" },
+  17: { x: 650, y: 350, width: 140, height: 70, shape: "rect" },
+  18: { x: 650, y: 260, width: 140, height: 70, shape: "rect" },
+  19: { x: 650, y: 170, width: 140, height: 70, shape: "rect" },
+  20: { x: 650, y: 50, width: 100, height: 100, shape: "rect" },
 }
 
 export function FloorPlan({ tableCapacities, tableAssignments, guests }: FloorPlanProps) {
@@ -67,24 +76,26 @@ export function FloorPlan({ tableCapacities, tableAssignments, guests }: FloorPl
     return capacity > 0 ? (assignedGuests / capacity) * 100 : 0
   }
 
-  // Get color based on occupancy
+  // Get color based on occupancy - new color scheme
   const getTableColor = (tableNumber: number) => {
     const occupancy = getTableOccupancy(tableNumber)
 
-    if (occupancy === 0) return "rgb(219, 234, 254)" // Empty - light blue
-    if (occupancy < 50) return "rgb(220, 252, 231)" // Under 50% - light green
-    if (occupancy < 100) return "rgb(254, 240, 138)" // 50-99% - light yellow
-    return "rgb(254, 226, 226)" // 100% - light red
+    if (occupancy === 0) return "rgb(243, 244, 246)" // Empty - light gray
+    if (occupancy <= 50) return "rgb(220, 252, 231)" // Low - light green
+    if (occupancy <= 90) return "rgb(254, 240, 138)" // Medium - light amber
+    if (occupancy < 100) return "rgb(254, 215, 170)" // High - light orange
+    return "rgb(254, 226, 226)" // Full - light red
   }
 
-  // Get border color based on occupancy
+  // Get border color based on occupancy - new color scheme
   const getTableBorderColor = (tableNumber: number) => {
     const occupancy = getTableOccupancy(tableNumber)
 
     if (occupancy === 0) return "rgb(59, 130, 246)" // Empty - blue
-    if (occupancy < 50) return "rgb(22, 163, 74)" // Under 50% - green
-    if (occupancy < 100) return "rgb(202, 138, 4)" // 50-99% - yellow
-    return "rgb(220, 38, 38)" // 100% - red
+    if (occupancy <= 50) return "rgb(22, 163, 74)" // Low - green
+    if (occupancy <= 90) return "rgb(202, 138, 4)" // Medium - amber
+    if (occupancy < 100) return "rgb(234, 88, 12)" // High - orange
+    return "rgb(220, 38, 38)" // Full - red
   }
 
   // Handle table click
@@ -94,7 +105,7 @@ export function FloorPlan({ tableCapacities, tableAssignments, guests }: FloorPl
   }
 
   return (
-    <div className="relative w-full" style={{ height: "550px" }}>
+    <div className="relative w-full" style={{ height: "600px" }}>
       {/* Table information dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -167,31 +178,10 @@ export function FloorPlan({ tableCapacities, tableAssignments, guests }: FloorPl
         </DialogContent>
       </Dialog>
 
-      {/* Legend */}
-      <div className="absolute top-2 left-2 bg-white p-2 rounded-md shadow-sm border text-xs">
-        <div className="font-medium mb-1">Occupancy:</div>
-        <div className="flex items-center gap-1 mb-1">
-          <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-          <span>Empty</span>
-        </div>
-        <div className="flex items-center gap-1 mb-1">
-          <div className="w-3 h-3 rounded-full bg-green-600"></div>
-          <span>&lt;50%</span>
-        </div>
-        <div className="flex items-center gap-1 mb-1">
-          <div className="w-3 h-3 rounded-full bg-yellow-600"></div>
-          <span>50-99%</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded-full bg-red-600"></div>
-          <span>100%</span>
-        </div>
-      </div>
-
       {/* Floor plan */}
-      <svg width="100%" height="100%" viewBox="0 0 750 550" className="border rounded">
+      <svg width="100%" height="100%" viewBox="0 0 800 600" className="border rounded">
         {/* Background */}
-        <rect x="0" y="0" width="750" height="550" fill="white" />
+        <rect x="0" y="0" width="800" height="600" fill="white" />
 
         {/* Tables */}
         {Object.entries(TABLE_POSITIONS).map(([tableNumber, position]) => {
@@ -238,13 +228,45 @@ export function FloorPlan({ tableCapacities, tableAssignments, guests }: FloorPl
               dominantBaseline="middle"
               fill="rgb(17, 24, 39)"
               fontWeight="bold"
-              fontSize="14"
+              fontSize="16"
               className="select-none"
             >
               {tableNumber}
             </text>
           </g>
         ))}
+
+        {/* Occupancy legend - moved to bottom left under table 4 */}
+        <g transform="translate(50, 480)">
+          <text x="0" y="0" fontWeight="medium" fontSize="12">
+            Occupancy:
+          </text>
+
+          <circle cx="10" cy="20" r="6" fill="rgb(243, 244, 246)" stroke="rgb(59, 130, 246)" strokeWidth="2" />
+          <text x="25" y="24" fontSize="12">
+            Empty
+          </text>
+
+          <circle cx="10" cy="45" r="6" fill="rgb(220, 252, 231)" stroke="rgb(22, 163, 74)" strokeWidth="2" />
+          <text x="25" y="49" fontSize="12">
+            1-50%
+          </text>
+
+          <circle cx="10" cy="70" r="6" fill="rgb(254, 240, 138)" stroke="rgb(202, 138, 4)" strokeWidth="2" />
+          <text x="25" y="74" fontSize="12">
+            51-90%
+          </text>
+
+          <circle cx="80" cy="20" r="6" fill="rgb(254, 215, 170)" stroke="rgb(234, 88, 12)" strokeWidth="2" />
+          <text x="95" y="24" fontSize="12">
+            91-99%
+          </text>
+
+          <circle cx="80" cy="45" r="6" fill="rgb(254, 226, 226)" stroke="rgb(220, 38, 38)" strokeWidth="2" />
+          <text x="95" y="49" fontSize="12">
+            100%
+          </text>
+        </g>
       </svg>
     </div>
   )
