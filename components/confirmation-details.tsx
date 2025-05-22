@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { clientStorage } from "@/utils/client-storage"
+import { Printer } from "lucide-react"
 
 interface MealSelection {
   guestName: string
@@ -18,6 +19,7 @@ interface ConfirmationDetailsProps {
 export function ConfirmationDetails({ cabinNumber, mealSelections }: ConfirmationDetailsProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
+  const printRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
 
   const handleSubmit = async () => {
@@ -41,6 +43,26 @@ export function ConfirmationDetails({ cabinNumber, mealSelections }: Confirmatio
     }
   }
 
+  const handlePrint = () => {
+    const printContent = printRef.current
+    if (!printContent) return
+
+    const originalContents = document.body.innerHTML
+    const printContents = printContent.innerHTML
+
+    document.body.innerHTML = `
+      <div style="padding: 20px;">
+        <h1 style="text-align: center; margin-bottom: 20px;">DeWillemstad Meal Selections</h1>
+        <h2 style="margin-bottom: 10px;">Cabin: ${cabinNumber}</h2>
+        ${printContents}
+      </div>
+    `
+
+    window.print()
+    document.body.innerHTML = originalContents
+    window.location.reload()
+  }
+
   const handleStartOver = () => {
     router.push("/")
   }
@@ -54,14 +76,20 @@ export function ConfirmationDetails({ cabinNumber, mealSelections }: Confirmatio
           You will receive a confirmation email shortly. If you need to make any changes, please contact the cruise
           staff.
         </p>
-        <Button onClick={handleStartOver}>Return to Home</Button>
+        <div className="flex justify-center gap-4">
+          <Button onClick={handleStartOver}>Return to Home</Button>
+          <Button variant="outline" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" />
+            Print Confirmation
+          </Button>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="space-y-6">
-      <div>
+      <div ref={printRef}>
         <h2 className="mb-4 text-xl font-semibold">Your Meal Selections</h2>
         <div className="rounded-lg border border-gray-200">
           <table className="w-full">
@@ -96,9 +124,15 @@ export function ConfirmationDetails({ cabinNumber, mealSelections }: Confirmatio
         <Button variant="outline" onClick={handleStartOver}>
           Start Over
         </Button>
-        <Button onClick={handleSubmit} disabled={isSubmitting}>
-          {isSubmitting ? "Submitting..." : "Confirm and Submit"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" />
+            Print
+          </Button>
+          <Button onClick={handleSubmit} disabled={isSubmitting}>
+            {isSubmitting ? "Submitting..." : "Confirm and Submit"}
+          </Button>
+        </div>
       </div>
     </div>
   )

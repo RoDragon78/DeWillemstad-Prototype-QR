@@ -59,3 +59,19 @@ body {
     --ring: 224.3 76.3% 48%;
   }
 }
+
+/* Fix for green checkmark positioning */
+[data-state="active"] > span {
+  position: relative;
+  z-index: 0;
+}
+
+/* Make meal options clickable */
+.meal-option {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.meal-option:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
