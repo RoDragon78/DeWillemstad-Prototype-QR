@@ -11,6 +11,7 @@
 body {
   color: rgb(var(--foreground-rgb));
   background: white;
+  font-size: 16px;
 }
 
 @layer base {
@@ -74,4 +75,31 @@ body {
 
 .meal-option:hover {
   background-color: rgba(0, 0, 0, 0.03);
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  body {
+    font-size: 14px;
+  }
+
+  h1 {
+    font-size: 1.5rem !important;
+  }
+
+  h2 {
+    font-size: 1.25rem !important;
+  }
+
+  .text-lg {
+    font-size: 1rem !important;
+  }
+
+  .text-base {
+    font-size: 0.875rem !important;
+  }
+
+  .text-sm {
+    font-size: 0.75rem !important;
+  }
 }

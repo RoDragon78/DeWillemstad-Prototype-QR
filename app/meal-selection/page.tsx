@@ -1,13 +1,14 @@
 "use client"
 
+import type React from "react"
+
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Button } from "@/components/ui/button"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { FileDown, Save, AlertCircle, Check } from "lucide-react"
+import { AlertCircle, Check, ChevronLeft, ChevronRight } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { MealPreviewDialog } from "@/components/meal-preview-dialog"
 import { generateAndDownloadPdf } from "@/components/pdf-service"
@@ -35,14 +36,14 @@ export default function MealSelectionPage() {
   const [mealSelections, setMealSelections] = useState<Record<string, Record<number, number>>>({})
   const [isSaving, setIsSaving] = useState(false)
   const [isPdfGenerating, setIsPdfGenerating] = useState(false)
-  const [saveSuccess, setSaveSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [validationError, setValidationError] = useState<string | null>(null)
   const [language, setLanguage] = useState<"en" | "nl" | "de">("en")
   const [showPreview, setShowPreview] = useState(false)
   const [previewAction, setPreviewAction] = useState<"pdf" | "save" | null>(null)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
-  const [redirectCountdown, setRedirectCountdown] = useState(0)
+  const [showConfirmation, setShowConfirmation] = useState(false)
+  const [redirectCountdown, setRedirectCountdown] = useState(3)
+  const [savedSelections, setSavedSelections] = useState<Array<{ guest: string; days: Record<number, string> }>>([])
 
   // Track which days have selections
   const [daysWithSelections, setDaysWithSelections] = useState<Record<number, boolean>>({
@@ -56,17 +57,19 @@ export default function MealSelectionPage() {
 
   // Countdown timer for redirect
   useEffect(() => {
+    if (!showConfirmation) return
+
     if (redirectCountdown > 0) {
       const timer = setTimeout(() => {
         setRedirectCountdown(redirectCountdown - 1)
       }, 1000)
 
       return () => clearTimeout(timer)
-    } else if (redirectCountdown === 0 && successMessage) {
+    } else {
       // Redirect to home page when countdown reaches 0
       router.push("/")
     }
-  }, [redirectCountdown, successMessage, router])
+  }, [redirectCountdown, showConfirmation, router])
 
   // Fetch guests for cabin - memoized to prevent unnecessary re-renders
   const fetchGuestsForCabin = useCallback(
@@ -271,6 +274,50 @@ export default function MealSelectionPage() {
     setPreviewAction(null)
   }
 
+  // Navigate to previous day
+  const goToPreviousDay = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (selectedDay > 2) {
+      setSelectedDay(selectedDay - 1)
+    }
+  }
+
+  // Navigate to next day
+  const goToNextDay = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (selectedDay < 7) {
+      setSelectedDay(selectedDay + 1)
+    }
+  }
+
+  // Prepare saved selections for display
+  const prepareSavedSelections = useCallback(() => {
+    const selections: Array<{ guest: string; days: Record<number, string> }> = []
+
+    guests.forEach((guest) => {
+      const guestSelections: Record<number, string> = {}
+
+      for (let day = 2; day <= 7; day++) {
+        const mealId = mealSelections[guest.id]?.[day]
+        if (mealId) {
+          const meal = menuItems.find((m) => m.id === mealId)
+          if (meal) {
+            guestSelections[day] = meal[`name_${language}` as keyof MenuItem] || meal.name_en
+          }
+        }
+      }
+
+      selections.push({
+        guest: guest.guest_name,
+        days: guestSelections,
+      })
+    })
+
+    return selections
+  }, [guests, mealSelections, menuItems, language])
+
   const handleSave = async () => {
     setIsSaving(true)
     setValidationError(null)
@@ -310,8 +357,11 @@ export default function MealSelectionPage() {
         }
       }
 
-      // Show success message and start countdown
-      setSuccessMessage("Your meal selections have been saved successfully!")
+      // Prepare saved selections for display
+      setSavedSelections(prepareSavedSelections())
+
+      // Show confirmation screen and start countdown
+      setShowConfirmation(true)
       setRedirectCountdown(3)
       setShowPreview(false)
     } catch (error) {
@@ -376,8 +426,11 @@ export default function MealSelectionPage() {
         throw new Error("Failed to generate PDF")
       }
 
-      // Show success message and start countdown
-      setSuccessMessage("Your meal selections have been saved as PDF!")
+      // Prepare saved selections for display
+      setSavedSelections(prepareSavedSelections())
+
+      // Show confirmation screen and start countdown
+      setShowConfirmation(true)
       setRedirectCountdown(3)
     } catch (error) {
       console.error("Error generating PDF:", error)
@@ -404,6 +457,26 @@ export default function MealSelectionPage() {
     return result
   }, [menuItems])
 
+  // Function to handle meal option click with explicit event prevention
+  const handleMealOptionClick = useCallback(
+    (e: React.MouseEvent, guestId: string, day: number, mealId: number) => {
+      e.preventDefault()
+      e.stopPropagation()
+      updateMealSelection(guestId, day, mealId)
+    },
+    [updateMealSelection],
+  )
+
+  // Get meal name by ID
+  const getMealName = useCallback(
+    (mealId: number) => {
+      const meal = menuItems.find((m) => m.id === mealId)
+      if (!meal) return ""
+      return meal[`name_${language}` as keyof MenuItem] || meal.name_en
+    },
+    [menuItems, language],
+  )
+
   if (isLoading) {
     return <div className="flex min-h-screen items-center justify-center">Loading...</div>
   }
@@ -421,134 +494,211 @@ export default function MealSelectionPage() {
     )
   }
 
+  // Show confirmation screen after saving
+  if (showConfirmation) {
+    return (
+      <div className="min-h-screen bg-white p-4">
+        <div className="mx-auto max-w-3xl text-center">
+          <div className="mb-6">
+            <h1 className="text-3xl font-bold text-gray-900">DeWillemstad Meal Selection</h1>
+            <p className="mt-1 text-gray-600">River Cruise Dining</p>
+          </div>
+
+          <div className="flex justify-center mb-4">
+            <div className="h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center">
+              <Check className="h-8 w-8 text-blue-600" />
+            </div>
+          </div>
+
+          <h2 className="text-2xl font-bold mb-2">Thank You!</h2>
+          <p className="text-lg mb-2">Your meal choices have been saved successfully.</p>
+          <p className="text-gray-600 mb-6">Returning to home page in {redirectCountdown} seconds...</p>
+
+          <div className="max-w-2xl mx-auto text-left">
+            <h3 className="text-lg font-medium mb-4">Your selections:</h3>
+
+            {guests.map((guest, guestIndex) => (
+              <div key={guest.id} className="mb-6">
+                <h4 className="text-blue-600 font-medium">{guest.guest_name}</h4>
+                <div className="grid grid-cols-2 gap-x-8 mt-2">
+                  <div className="space-y-2">
+                    {[2, 3, 4, 5, 6, 7].map((day) => (
+                      <div key={day} className="text-gray-600">
+                        Day {day} ({DAY_NAMES[day]}):
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-2">
+                    {[2, 3, 4, 5, 6, 7].map((day) => {
+                      const mealId = mealSelections[guest.id]?.[day]
+                      return (
+                        <div key={day} className="font-medium">
+                          {mealId ? getMealName(mealId) : "No selection"}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold">DeWillemstad Meal Selection</h1>
-          <p className="mt-2 text-gray-600">River Cruise Dining</p>
+    <div className="min-h-screen bg-white p-4">
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-6 text-center">
+          <h1 className="text-3xl font-bold text-gray-900">DeWillemstad Meal Selection</h1>
+          <p className="mt-1 text-gray-600">River Cruise Dining</p>
         </div>
 
         {validationError && (
-          <Alert className="mb-6 bg-amber-50 border-amber-200">
+          <Alert className="mb-4 bg-amber-50 border-amber-200">
             <AlertCircle className="h-4 w-4 text-amber-600" />
             <AlertDescription className="text-amber-700">{validationError}</AlertDescription>
           </Alert>
         )}
 
-        {successMessage && (
-          <Alert className="mb-6 bg-green-50 border-green-200">
-            <Check className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-700">
-              {successMessage} Returning to home page in {redirectCountdown} seconds...
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <div className="mb-6 flex justify-between items-center">
-          <div className="rounded-lg bg-blue-50 p-4 text-center flex-grow">
-            <h2 className="text-xl font-semibold">
-              Cabin: {cabinNumber} - {guests.length} guests
-            </h2>
-          </div>
-
-          <div className="ml-4">
-            <select
-              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm"
-              value={language}
-              onChange={(e) => handleLanguageChange(e.target.value as "en" | "nl" | "de")}
-            >
-              <option value="en">{LANGUAGE_FLAGS.en} English</option>
-              <option value="de">{LANGUAGE_FLAGS.de} Deutsch</option>
-              <option value="nl">{LANGUAGE_FLAGS.nl} Nederlands</option>
-            </select>
-          </div>
+        <div className="mb-4 rounded-lg bg-blue-50 p-4">
+          <h2 className="text-lg font-medium text-blue-800">
+            Cabin {cabinNumber} - {guests.length} guest(s)
+          </h2>
         </div>
 
-        <Tabs defaultValue="2" onValueChange={(value) => setSelectedDay(Number.parseInt(value))}>
-          <TabsList className="mb-8 grid w-full grid-cols-6">
-            {[2, 3, 4, 5, 6, 7].map((day) => (
-              <TabsTrigger key={day} value={day.toString()} className="relative">
-                <span className="relative z-0">Day {day}</span>
-                {daysWithSelections[day] && (
-                  <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-white z-10">
-                    <Check className="h-3 w-3" />
-                  </span>
-                )}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+        <div className="mb-2 flex justify-end">
+          <select
+            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm"
+            value={language}
+            onChange={(e) => handleLanguageChange(e.target.value as "en" | "nl" | "de")}
+          >
+            <option value="en">{LANGUAGE_FLAGS.en} English</option>
+            <option value="de">{LANGUAGE_FLAGS.de} Deutsch</option>
+            <option value="nl">{LANGUAGE_FLAGS.nl} Nederlands</option>
+          </select>
+        </div>
 
+        {/* Day tabs */}
+        <div className="mb-2 flex justify-between">
           {[2, 3, 4, 5, 6, 7].map((day) => (
-            <TabsContent key={day} value={day.toString()}>
-              <h3 className="mb-6 text-center text-2xl font-bold">{DAY_NAMES[day]}</h3>
-
-              <div className={`grid ${guests.length === 2 ? "grid-cols-2" : "grid-cols-1 md:grid-cols-2"} gap-6`}>
-                {guests.map((guest) => {
-                  const dayMeals = menuByDay[day] || []
-
-                  return (
-                    <div key={guest.id} className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                      <h4 className="mb-4 text-xl font-semibold">{guest.guest_name}</h4>
-
-                      <RadioGroup
-                        value={mealSelections[guest.id]?.[day]?.toString() || ""}
-                        onValueChange={(value) => updateMealSelection(guest.id, day, Number(value))}
-                      >
-                        <div className="space-y-4">
-                          {dayMeals.map((meal) => (
-                            <div
-                              key={meal.id}
-                              className="rounded-lg border border-gray-100 p-4 cursor-pointer hover:bg-gray-50"
-                              onClick={() => updateMealSelection(guest.id, day, meal.id)}
-                            >
-                              <div className="flex items-start space-x-2">
-                                <RadioGroupItem
-                                  value={meal.id.toString()}
-                                  id={`${guest.id}-${meal.id}`}
-                                  className="mt-1"
-                                />
-                                <div className="flex-1">
-                                  <Label
-                                    htmlFor={`${guest.id}-${meal.id}`}
-                                    className="text-base font-medium cursor-pointer"
-                                  >
-                                    {meal[`name_${language}` as keyof MenuItem] || meal.name_en}
-                                  </Label>
-                                  <p className="text-sm text-gray-600">
-                                    {meal[`description_${language}` as keyof MenuItem] || meal.description_en}
-                                  </p>
-                                  <p className="mt-1 text-xs text-gray-500">{meal.meal_type}</p>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </RadioGroup>
-                    </div>
-                  )
-                })}
-              </div>
-            </TabsContent>
+            <button
+              key={day}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setSelectedDay(day)
+              }}
+              className={`relative px-4 py-2 text-sm font-medium rounded-t-md ${
+                selectedDay === day
+                  ? "bg-blue-100 text-blue-800"
+                  : daysWithSelections[day]
+                    ? "bg-green-50 text-green-800"
+                    : "bg-gray-50 text-gray-800 hover:bg-gray-100"
+              }`}
+            >
+              Day {day} {daysWithSelections[day] && <span className="text-green-500 ml-1">✓</span>}
+            </button>
           ))}
-        </Tabs>
+        </div>
 
-        <div className="mt-8 flex justify-center space-x-4">
+        <h3 className="mb-4 text-center text-xl font-medium text-gray-900">{DAY_NAMES[selectedDay]}</h3>
+
+        {/* Guest meal selections - side by side */}
+        <div className="grid grid-cols-2 gap-4">
+          {guests.map((guest) => {
+            const dayMeals = menuByDay[selectedDay] || []
+
+            return (
+              <div key={guest.id} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                <div className="border-b border-gray-200 bg-gray-50 px-4 py-2">
+                  <h4 className="text-base font-medium">{guest.guest_name}</h4>
+                </div>
+
+                <RadioGroup
+                  value={mealSelections[guest.id]?.[selectedDay]?.toString() || ""}
+                  onValueChange={(value) => updateMealSelection(guest.id, selectedDay, Number(value))}
+                  className="p-1"
+                >
+                  {dayMeals.map((meal) => {
+                    const isSelected = mealSelections[guest.id]?.[selectedDay] === meal.id
+
+                    return (
+                      <div
+                        key={meal.id}
+                        className={`border-b last:border-0 border-gray-100 ${isSelected ? "bg-blue-50" : ""}`}
+                        onClick={(e) => handleMealOptionClick(e, guest.id, selectedDay, meal.id)}
+                      >
+                        <div className="flex items-start p-2 cursor-pointer hover:bg-gray-50 rounded-md">
+                          <RadioGroupItem
+                            value={meal.id.toString()}
+                            id={`${guest.id}-${meal.id}`}
+                            className="mt-1 mr-2"
+                          />
+                          <div className="flex-1">
+                            <Label htmlFor={`${guest.id}-${meal.id}`} className="text-sm font-medium cursor-pointer">
+                              {meal[`name_${language}` as keyof MenuItem] || meal.name_en}
+                            </Label>
+                            <p className="text-xs text-gray-600 mt-1">
+                              {meal[`description_${language}` as keyof MenuItem] || meal.description_en}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500">{meal.meal_type}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </RadioGroup>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Navigation buttons */}
+        <div className="mt-6 flex justify-between">
           <Button
-            variant={validateSelections() ? "default" : "outline"}
-            onClick={() => handleShowPreview("pdf")}
-            disabled={isPdfGenerating || isSaving || !validateSelections() || redirectCountdown > 0}
+            variant="outline"
+            onClick={(e) => goToPreviousDay(e)}
+            disabled={selectedDay <= 2}
+            className="flex items-center"
           >
-            <FileDown className="mr-2 h-4 w-4" />
-            Save as PDF
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Back
           </Button>
+
+          <div className="flex gap-4">
+            <Button
+              variant="outline"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                handleSave()
+              }}
+              disabled={isSaving || !validateSelections()}
+            >
+              Submit Only
+            </Button>
+            <Button
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                handleSaveAsPDF()
+              }}
+              disabled={isPdfGenerating || !validateSelections()}
+            >
+              Submit & Download PDF
+            </Button>
+          </div>
+
           <Button
-            variant={validateSelections() ? "default" : "outline"}
-            onClick={() => handleShowPreview("save")}
-            disabled={isSaving || isPdfGenerating || !validateSelections() || redirectCountdown > 0}
+            variant="outline"
+            onClick={(e) => goToNextDay(e)}
+            disabled={selectedDay >= 7}
+            className="flex items-center"
           >
-            <Save className="mr-2 h-4 w-4" />
-            Save Selections
+            Next
+            <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         </div>
 

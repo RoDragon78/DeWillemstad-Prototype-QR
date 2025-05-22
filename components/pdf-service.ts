@@ -26,31 +26,31 @@ export async function generateAndDownloadPdf(options: PdfGenerationOptions): Pro
       format: "a4",
     })
 
-    // Set font sizes - smaller to fit more content
-    const titleFontSize = 14
-    const subtitleFontSize = 10
-    const normalFontSize = 8
-    const smallFontSize = 7
+    // Set font sizes
+    const titleFontSize = 16
+    const subtitleFontSize = 12
+    const normalFontSize = 10
+    const smallFontSize = 8
 
     // Add title
     doc.setFontSize(titleFontSize)
     doc.setFont("helvetica", "bold")
-    doc.text("DeWillemstad Meal Selections", 105, 15, { align: "center" })
+    doc.text("DeWillemstad Meal Selections", 105, 20, { align: "center" })
 
     // Add subtitle
     doc.setFontSize(subtitleFontSize)
     doc.setFont("helvetica", "normal")
-    doc.text("River Cruise Dining", 105, 20, { align: "center" })
+    doc.text("River Cruise Dining", 105, 28, { align: "center" })
 
     // Add cabin info
     doc.setFillColor(240, 247, 255)
-    doc.rect(20, 25, 170, 12, "F")
+    doc.rect(20, 35, 170, 15, "F")
     doc.setFontSize(subtitleFontSize)
     doc.setFont("helvetica", "bold")
-    doc.text(`Cabin: ${cabinNumber}`, 105, 31, { align: "center" })
+    doc.text(`Cabin: ${cabinNumber}`, 105, 42, { align: "center" })
     doc.setFontSize(normalFontSize)
     doc.setFont("helvetica", "normal")
-    doc.text(`Guests: ${guests.map((g) => g.guest_name).join(", ")}`, 105, 35, { align: "center" })
+    doc.text(`Guests: ${guests.map((g) => g.guest_name).join(", ")}`, 105, 48, { align: "center" })
 
     // Function to get meal name by ID
     const getMealName = (mealId: number) => {
@@ -59,38 +59,39 @@ export async function generateAndDownloadPdf(options: PdfGenerationOptions): Pro
       return meal[`name_${language}` as keyof typeof meal] || meal.name_en
     }
 
-    // Add meal selections for each day - compact layout
-    let yPosition = 42
-    const columnWidth = 85 // Two columns
-    let isRightColumn = false
+    // Add meal selections for each day
+    let yPosition = 60
 
     for (let day = 2; day <= 7; day++) {
       // Check if any guest has selections for this day
       const hasSelections = guests.some((guest) => mealSelections[guest.id]?.[day] > 0)
 
       if (hasSelections) {
-        // Calculate x position based on column
-        const xPosition = isRightColumn ? 110 : 20
+        // Add page break if needed
+        if (yPosition > 250) {
+          doc.addPage()
+          yPosition = 20
+        }
 
         // Add day header
         doc.setFillColor(245, 245, 245)
-        doc.rect(xPosition, yPosition, columnWidth, 6, "F")
+        doc.rect(20, yPosition, 170, 8, "F")
         doc.setFontSize(subtitleFontSize)
         doc.setFont("helvetica", "bold")
-        doc.text(`Day ${day} - ${DAY_NAMES[day]}`, xPosition + 3, yPosition + 4)
-        yPosition += 8
+        doc.text(`Day ${day} - ${DAY_NAMES[day]}`, 25, yPosition + 5.5)
+        yPosition += 12
 
         // Add table header
         doc.setFontSize(normalFontSize)
         doc.setFont("helvetica", "bold")
-        doc.text("Guest", xPosition + 3, yPosition)
-        doc.text("Meal Selection", xPosition + 30, yPosition)
-        yPosition += 3
+        doc.text("Guest", 25, yPosition)
+        doc.text("Meal Selection", 80, yPosition)
+        yPosition += 5
 
         // Add horizontal line
         doc.setDrawColor(200, 200, 200)
-        doc.line(xPosition + 3, yPosition, xPosition + columnWidth - 3, yPosition)
-        yPosition += 4
+        doc.line(25, yPosition, 185, yPosition)
+        yPosition += 5
 
         // Add guest selections
         doc.setFont("helvetica", "normal")
@@ -98,42 +99,32 @@ export async function generateAndDownloadPdf(options: PdfGenerationOptions): Pro
           const mealId = mealSelections[guest.id]?.[day]
           const mealName = getMealName(mealId)
 
-          // Truncate guest name if too long
-          const truncatedGuestName =
-            guest.guest_name.length > 12 ? guest.guest_name.substring(0, 12) + "..." : guest.guest_name
-
-          doc.text(truncatedGuestName, xPosition + 3, yPosition)
+          doc.text(guest.guest_name, 25, yPosition)
 
           // Handle long meal names with wrapping
-          const mealNameLines = doc.splitTextToSize(mealName, 50)
-          doc.text(mealNameLines, xPosition + 30, yPosition)
+          const mealNameLines = doc.splitTextToSize(mealName, 105)
+          doc.text(mealNameLines, 80, yPosition)
 
           // Adjust position based on number of lines
-          yPosition += Math.max(4, mealNameLines.length * 3.5)
+          yPosition += Math.max(6, mealNameLines.length * 5)
         })
 
         // Add space after each day
-        yPosition += 5
-
-        // Toggle column or reset position for next row
-        if (isRightColumn) {
-          isRightColumn = false
-          // Start a new row
-          yPosition += 5
-        } else {
-          isRightColumn = true
-          // Stay on same row, move to right column
-          yPosition -= guests.length * 4 + 20 // Approximate reset to align with left column
-        }
+        yPosition += 8
       }
     }
 
     // Add footer
-    doc.setFontSize(smallFontSize)
-    doc.setTextColor(100, 100, 100)
-    doc.text("If you need to make changes to your selections, please contact the Hotel Manager.", 105, 285, {
-      align: "center",
-    })
+    const pageCount = doc.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.setFontSize(smallFontSize)
+      doc.setTextColor(100, 100, 100)
+      doc.text("If you need to make changes to your selections, please contact the Hotel Manager.", 105, 285, {
+        align: "center",
+      })
+      doc.text(`Page ${i} of ${pageCount}`, 105, 292, { align: "center" })
+    }
 
     // Save the PDF
     doc.save(`DeWillemstad_Cabin${cabinNumber}_Meals.pdf`)
