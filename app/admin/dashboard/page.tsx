@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandList, CommandInput, CommandItem } from "@/components/ui/command"
 import { clientStorage } from "@/utils/client-storage"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // Table capacity configuration based on the floor plan - removed tables 5 and 15
 const TABLE_CAPACITIES = {
@@ -76,6 +77,7 @@ export default function DashboardPage() {
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error" | "info"; message: string } | null>(
     null,
   )
+  const [activeTab, setActiveTab] = useState("floor-plan")
 
   // Form state for adding a cabin manually
   const [newTableNumber, setNewTableNumber] = useState("")
@@ -705,260 +707,278 @@ export default function DashboardPage() {
           </Alert>
         )}
 
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">Control Panel</h2>
+        <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+          <h2 className="text-lg font-semibold mb-3">Control Panel</h2>
 
-          <div className="grid grid-cols-1 gap-4 mb-6">
-            <div>
-              <h3 className="font-medium mb-2">Table Assignment System</h3>
-              <div className="flex gap-2">
-                <Button onClick={assignTablesAutomatically} disabled={assigningTables} className="flex-1">
-                  {assigningTables ? (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      Assigning...
-                    </>
-                  ) : (
-                    "Assign Tables Automatically"
-                  )}
-                </Button>
-
-                <Button onClick={clearTableAssignments} variant="outline" disabled={loading} className="flex-1">
-                  Clear All Assignments
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t pt-4">
-            <h3 className="font-medium mb-3">Assignment Summary</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <p className="text-sm text-blue-600">Total Guests</p>
-                <p className="text-2xl font-bold">{guests.length}</p>
-              </div>
-
-              <div className="bg-green-50 p-3 rounded-lg">
-                <p className="text-sm text-green-600">Assigned Guests</p>
-                <p className="text-2xl font-bold">{guests.filter((g) => g.table_nr).length}</p>
-              </div>
-
-              <div className="bg-amber-50 p-3 rounded-lg">
-                <p className="text-sm text-amber-600">Tables Used</p>
-                <p className="text-2xl font-bold">{new Set(guests.map((g) => g.table_nr).filter(Boolean)).size}</p>
-              </div>
-
-              <div className="bg-purple-50 p-3 rounded-lg">
-                <p className="text-sm text-purple-600">Booking Groups</p>
-                <p className="text-2xl font-bold">{new Set(guests.map((g) => g.booking_number)).size}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-              <h2 className="text-xl font-semibold mb-4">Floor Plan</h2>
-              <div className="border rounded-lg p-4 overflow-auto">
-                <FloorPlan tableCapacities={TABLE_CAPACITIES} tableAssignments={tableAssignments} />
-              </div>
-            </div>
-          </div>
-
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-              <h2 className="text-xl font-semibold mb-4">Add Cabin to Table</h2>
-
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="cabin-number">Cabin Number</Label>
-                  <div className="relative mt-1">
-                    <Popover open={cabinSearchOpen} onOpenChange={setCabinSearchOpen}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={cabinSearchOpen}
-                          className="w-full justify-between"
-                        >
-                          {newCabinNumber || "Select cabin..."}
-                          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-full p-0">
-                        <Command>
-                          <CommandInput placeholder="Search cabins..." onValueChange={(value) => searchCabins(value)} />
-                          <CommandList>
-                            <CommandEmpty>No cabins found.</CommandEmpty>
-                            <CommandGroup>
-                              {cabinSuggestions.map((cabin) => (
-                                <CommandItem
-                                  key={cabin.cabin_number}
-                                  value={cabin.cabin_number}
-                                  onSelect={() => handleCabinSelect(cabin)}
-                                >
-                                  <Check
-                                    className={`mr-2 h-4 w-4 ${
-                                      newCabinNumber === cabin.cabin_number ? "opacity-100" : "opacity-0"
-                                    }`}
-                                  />
-                                  {cabin.cabin_number} - {cabin.guests.map((g) => g.name).join(", ")}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                </div>
-
-                {selectedCabinGuests.length > 0 && (
-                  <div className="mt-2 p-3 bg-gray-50 rounded-md">
-                    <h4 className="text-sm font-medium mb-2">Guest Names:</h4>
-                    <ul className="space-y-1">
-                      {selectedCabinGuests.map((guest) => (
-                        <li key={guest.id} className="text-sm flex items-center">
-                          <User className="h-3 w-3 mr-1 text-gray-400" />
-                          {guest.name || "Unknown"}
-                          {guest.nationality && <span className="text-gray-500 ml-1">({guest.nationality})</span>}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+          <div className="grid grid-cols-1 gap-3 mb-4">
+            <div className="flex gap-2">
+              <Button
+                onClick={assignTablesAutomatically}
+                disabled={assigningTables}
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+              >
+                {assigningTables ? (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  "Assign Tables Automatically"
                 )}
+              </Button>
 
-                <div>
-                  <Label htmlFor="table-number">Table Number</Label>
-                  <Input
-                    id="table-number"
-                    placeholder="e.g. 20"
-                    value={newTableNumber}
-                    onChange={(e) => setNewTableNumber(e.target.value)}
-                  />
-                </div>
+              <Button onClick={clearTableAssignments} variant="outline" disabled={loading} className="flex-1">
+                Clear All Assignments
+              </Button>
+            </div>
+          </div>
 
-                <div>
-                  <Label htmlFor="nationality">Nationality (Optional)</Label>
-                  <Input
-                    id="nationality"
-                    placeholder="e.g. German"
-                    value={newNationality}
-                    onChange={(e) => setNewNationality(e.target.value)}
-                  />
-                </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+              <p className="text-sm text-blue-600 font-medium">Total Guests</p>
+              <p className="text-2xl font-bold">{guests.length}</p>
+            </div>
 
-                <Button onClick={addCabinToTable} className="w-full">
-                  Add
-                </Button>
-              </div>
+            <div className="bg-green-50 p-3 rounded-lg border border-green-100">
+              <p className="text-sm text-green-600 font-medium">Assigned Guests</p>
+              <p className="text-2xl font-bold">{guests.filter((g) => g.table_nr).length}</p>
+            </div>
+
+            <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
+              <p className="text-sm text-amber-600 font-medium">Tables Used</p>
+              <p className="text-2xl font-bold">{new Set(guests.map((g) => g.table_nr).filter(Boolean)).size}</p>
+            </div>
+
+            <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
+              <p className="text-sm text-purple-600 font-medium">Booking Groups</p>
+              <p className="text-2xl font-bold">{new Set(guests.map((g) => g.booking_number)).size}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">Table Assignments</h2>
+        <Tabs defaultValue="floor-plan" value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="w-full max-w-md mx-auto mb-4 grid grid-cols-2">
+            <TabsTrigger value="floor-plan" className="text-sm">
+              Floor Plan
+            </TabsTrigger>
+            <TabsTrigger value="assignments" className="text-sm">
+              Table Assignments
+            </TabsTrigger>
+          </TabsList>
 
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search by table, cabin, nationality..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-64"
-              />
+          <TabsContent value="floor-plan" className="mt-0">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+                  <h2 className="text-lg font-semibold mb-3">Floor Plan</h2>
+                  <div className="border rounded-lg overflow-hidden">
+                    <FloorPlan tableCapacities={TABLE_CAPACITIES} tableAssignments={tableAssignments} guests={guests} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="lg:col-span-1">
+                <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+                  <h2 className="text-lg font-semibold mb-3">Add Cabin to Table</h2>
+
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="cabin-number">Cabin Number</Label>
+                      <div className="relative mt-1">
+                        <Popover open={cabinSearchOpen} onOpenChange={setCabinSearchOpen}>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={cabinSearchOpen}
+                              className="w-full justify-between"
+                            >
+                              {newCabinNumber || "Select cabin..."}
+                              <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-full p-0">
+                            <Command>
+                              <CommandInput
+                                placeholder="Search cabins..."
+                                onValueChange={(value) => searchCabins(value)}
+                              />
+                              <CommandList>
+                                <CommandEmpty>No cabins found.</CommandEmpty>
+                                <CommandGroup>
+                                  {cabinSuggestions.map((cabin) => (
+                                    <CommandItem
+                                      key={cabin.cabin_number}
+                                      value={cabin.cabin_number}
+                                      onSelect={() => handleCabinSelect(cabin)}
+                                    >
+                                      <Check
+                                        className={`mr-2 h-4 w-4 ${
+                                          newCabinNumber === cabin.cabin_number ? "opacity-100" : "opacity-0"
+                                        }`}
+                                      />
+                                      {cabin.cabin_number} - {cabin.guests.map((g) => g.name).join(", ")}
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+
+                    {selectedCabinGuests.length > 0 && (
+                      <div className="mt-2 p-3 bg-gray-50 rounded-md">
+                        <h4 className="text-sm font-medium mb-2">Guest Names:</h4>
+                        <ul className="space-y-1">
+                          {selectedCabinGuests.map((guest) => (
+                            <li key={guest.id} className="text-sm flex items-center">
+                              <User className="h-3 w-3 mr-1 text-gray-400" />
+                              {guest.name || "Unknown"}
+                              {guest.nationality && <span className="text-gray-500 ml-1">({guest.nationality})</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div>
+                      <Label htmlFor="table-number">Table Number</Label>
+                      <Input
+                        id="table-number"
+                        placeholder="e.g. 20"
+                        value={newTableNumber}
+                        onChange={(e) => setNewTableNumber(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="nationality">Nationality (Optional)</Label>
+                      <Input
+                        id="nationality"
+                        placeholder="e.g. German"
+                        value={newNationality}
+                        onChange={(e) => setNewNationality(e.target.value)}
+                      />
+                    </div>
+
+                    <Button onClick={addCabinToTable} className="w-full">
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          </TabsContent>
 
-          <div className="border rounded-lg overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Table Number
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cabin Numbers
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Guest Names
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Nationality
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAssignments.length > 0 ? (
-                  filteredAssignments.map((assignment, index) => {
-                    // Find all guests for this assignment
-                    const assignmentGuests = guests.filter(
-                      (g) =>
-                        g.table_nr === assignment.table_number &&
-                        assignment.cabins.includes(g.cabin_number) &&
-                        g.nationality === assignment.nationality,
-                    )
+          <TabsContent value="assignments" className="mt-0">
+            <div className="bg-white rounded-lg shadow-sm p-4">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold">Table Assignments</h2>
 
-                    return (
-                      <tr key={index}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {assignment.table_number}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          <div className="flex flex-wrap gap-1">
-                            {assignment.cabins.map((cabin) => (
-                              <Badge
-                                key={cabin}
-                                className="flex items-center gap-1 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Search by table, cabin, nationality..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10 w-64"
+                  />
+                </div>
+              </div>
+
+              <div className="border rounded-lg overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Table
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Cabin Numbers
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Guest Names
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Nationality
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredAssignments.length > 0 ? (
+                      filteredAssignments.map((assignment, index) => {
+                        // Find all guests for this assignment
+                        const assignmentGuests = guests.filter(
+                          (g) =>
+                            g.table_nr === assignment.table_number &&
+                            assignment.cabins.includes(g.cabin_number) &&
+                            g.nationality === assignment.nationality,
+                        )
+
+                        return (
+                          <tr key={index} className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {assignment.table_number}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                              <div className="flex flex-wrap gap-1">
+                                {assignment.cabins.map((cabin) => (
+                                  <Badge
+                                    key={cabin}
+                                    className="flex items-center gap-1 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                  >
+                                    {cabin}
+                                    <button
+                                      onClick={() => removeCabinFromTable(assignment.table_number, cabin)}
+                                      className="ml-1 text-blue-500 hover:text-blue-700"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </Badge>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                              {assignmentGuests.map((g) => g.name).join(", ")}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                              {assignment.nationality}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-blue-600 hover:text-blue-800"
+                                onClick={() => {
+                                  setNewTableNumber(assignment.table_number.toString())
+                                  setNewNationality(assignment.nationality)
+                                }}
                               >
-                                {cabin}
-                                <button
-                                  onClick={() => removeCabinFromTable(assignment.table_number, cabin)}
-                                  className="ml-1 text-blue-500 hover:text-blue-700"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
-                              </Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {assignmentGuests.map((g) => g.name).join(", ")}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{assignment.nationality}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-blue-600 hover:text-blue-800"
-                            onClick={() => {
-                              setNewTableNumber(assignment.table_number.toString())
-                              setNewNationality(assignment.nationality)
-                            }}
-                          >
-                            <Plus className="h-4 w-4 mr-1" />
-                            Add Cabin
-                          </Button>
+                                <Plus className="h-4 w-4 mr-1" />
+                                Add Cabin
+                              </Button>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-3 text-center text-sm text-gray-500">
+                          {searchTerm ? "No matching assignments found." : "No table assignments yet."}
                         </td>
                       </tr>
-                    )
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                      {searchTerm ? "No matching assignments found." : "No table assignments yet."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )
