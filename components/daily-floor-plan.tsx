@@ -32,7 +32,7 @@ const TABLE_POSITIONS = {
   // Row 4 (increased sizes)
   4: { x: 40, y: 390, width: 120, height: 100, shape: "rect" },
   6: { x: 190, y: 390, width: 140, height: 80, shape: "rect" },
-  13: { x: 330, y: 390, width: 100, height: 100, shape: "circle" },
+  13: { x: 360, y: 390, width: 100, height: 100, shape: "circle" }, // Moved from x: 330 to x: 360
   17: { x: 450, y: 390, width: 140, height: 80, shape: "rect" },
 
   // Row 5 - Bottom row (increased sizes and repositioned)
@@ -346,7 +346,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
           yOffset += 14
         }
 
-        // Show meal summary at bottom
+        // Show meal summary with larger font and higher position
         const { meat, fish, vegetarian } = tableInfo.mealCounts
         const mealSummaryParts = []
         if (meat > 0) mealSummaryParts.push(`${meat}M`)
@@ -359,12 +359,12 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
           <text
             key={`meal-summary-${tableNumber}`}
             x={position.x + position.width / 2}
-            y={position.y + position.height - 8}
+            y={position.y + position.height - 25} // Moved higher (was -8)
             textAnchor="middle"
             dominantBaseline="middle"
             fill="white"
-            fontSize="10"
-            fontWeight="medium"
+            fontSize="14" // Increased from 10
+            fontWeight="bold" // Changed from medium to bold
             className="select-none"
           >
             {mealSummaryText}
