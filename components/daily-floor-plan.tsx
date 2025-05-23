@@ -32,7 +32,7 @@ const TABLE_POSITIONS = {
   // Row 4 (increased sizes)
   4: { x: 40, y: 390, width: 120, height: 100, shape: "rect" },
   6: { x: 190, y: 390, width: 140, height: 80, shape: "rect" },
-  13: { x: 360, y: 390, width: 100, height: 100, shape: "circle" }, // Moved from x: 330 to x: 360
+  13: { x: 340, y: 390, width: 100, height: 100, shape: "circle" }, // Changed from x: 320 to x: 340
   17: { x: 450, y: 390, width: 140, height: 80, shape: "rect" },
 
   // Row 5 - Bottom row (increased sizes and repositioned)
