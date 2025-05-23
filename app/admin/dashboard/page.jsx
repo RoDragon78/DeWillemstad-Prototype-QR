@@ -16,7 +16,7 @@ import { FloorPlan } from "@/components/floor-plan"
 import { DailyFloorPlan } from "@/components/daily-floor-plan"
 import { GuestList } from "@/components/guest-list"
 import { UnassignedGuests } from "@/components/unassigned-guests"
-import { AlertCircle, CheckCircle, X, LogOut, Users, Calendar, Home, Trash2 } from "lucide-react"
+import { AlertCircle, CheckCircle, X, LogOut, Users, Calendar, Home, Trash2, RefreshCw } from "lucide-react"
 
 // Updated table capacity configuration - added table 15
 const TABLE_CAPACITIES = {
@@ -54,6 +54,7 @@ export default function DashboardPage() {
   const [tableAssignments, setTableAssignments] = useState([])
   const [guests, setGuests] = useState([])
   const [statusMessage, setStatusMessage] = useState(null)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
 
   // Form state for adding a cabin manually
   const [newTableNumber, setNewTableNumber] = useState("")
@@ -108,6 +109,11 @@ export default function DashboardPage() {
         }
       })
     }
+  }
+
+  // Function to trigger refresh of child components
+  const triggerRefresh = () => {
+    setRefreshTrigger((prev) => prev + 1)
   }
 
   // Calculate statistics
@@ -219,6 +225,7 @@ export default function DashboardPage() {
 
       // Refresh data
       await fetchGuests()
+      triggerRefresh() // Trigger refresh of child components
       restoreScrollPosition()
 
       setStatusMessage({
@@ -252,6 +259,7 @@ export default function DashboardPage() {
 
       // Refresh data
       await fetchGuests()
+      triggerRefresh() // Trigger refresh of child components
       restoreScrollPosition()
 
       setStatusMessage({
@@ -296,6 +304,7 @@ export default function DashboardPage() {
           console.log("Change received in Dashboard:", payload)
           storeScrollPosition()
           fetchGuests().then(() => {
+            triggerRefresh() // Trigger refresh of child components
             restoreScrollPosition()
           })
         },
@@ -460,7 +469,7 @@ export default function DashboardPage() {
 
       // Refresh table preview and main data
       await Promise.all([previewTableGuests(newTableNumber), fetchGuests()])
-
+      triggerRefresh() // Trigger refresh of child components
       restoreScrollPosition()
 
       setStatusMessage({
@@ -488,14 +497,15 @@ export default function DashboardPage() {
     try {
       setLoading(true)
 
-      const { data, error } = await supabase.from("guest_manifest").select("*")
+      // Use a direct query to get the most up-to-date data
+      const { data, error } = await supabase.from("guest_manifest").select("*").order("cabin_nr", { ascending: true })
 
       if (error) {
         console.error("Error fetching guests:", error)
         throw error
       }
 
-      console.log("Fetched guests:", data)
+      console.log("Fetched guests:", data?.length, data)
       setGuests(data || [])
       processTableAssignments(data || [])
 
@@ -688,6 +698,7 @@ export default function DashboardPage() {
 
       // Refresh data
       await fetchGuests()
+      triggerRefresh() // Trigger refresh of child components
       restoreScrollPosition()
 
       // Clear the form and close dropdown
@@ -708,6 +719,7 @@ export default function DashboardPage() {
       })
       // Refresh data to ensure consistency
       fetchGuests()
+      triggerRefresh() // Trigger refresh of child components
     }
   }
 
@@ -760,6 +772,7 @@ export default function DashboardPage() {
 
       // Refresh data
       await fetchGuests()
+      triggerRefresh() // Trigger refresh of child components
 
       return true
     } catch (error) {
@@ -778,6 +791,25 @@ export default function DashboardPage() {
     const capacity = TABLE_CAPACITIES[tableNumber]
     const currentGuests = tableGuestPreview.length
     return `${currentGuests}/${capacity} seats`
+  }
+
+  // Manual refresh function
+  const handleManualRefresh = async () => {
+    try {
+      setStatusMessage(null)
+      await fetchGuests()
+      triggerRefresh()
+      setStatusMessage({
+        type: "success",
+        message: "Data refreshed successfully.",
+      })
+    } catch (error) {
+      console.error("Error refreshing data:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to refresh data. Please try again.",
+      })
+    }
   }
 
   // Add the return statement at the end of the DashboardPage function, just before the final closing brace
@@ -840,8 +872,12 @@ export default function DashboardPage() {
             <div className="space-y-6">
               {/* Control Panel */}
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle>Control Panel</CardTitle>
+                  <Button variant="outline" size="sm" onClick={handleManualRefresh} className="h-8">
+                    <RefreshCw className="h-4 w-4 mr-1" />
+                    Refresh Data
+                  </Button>
                 </CardHeader>
                 <CardContent>
                   <div className="flex gap-4 mb-6">
@@ -1066,7 +1102,11 @@ export default function DashboardPage() {
                   </Card>
 
                   {/* Unassigned Guests */}
-                  <UnassignedGuests currentTableNumber={newTableNumber} onAssignGuest={handleAssignGuest} />
+                  <UnassignedGuests
+                    currentTableNumber={newTableNumber}
+                    onAssignGuest={handleAssignGuest}
+                    refreshTrigger={refreshTrigger}
+                  />
                 </div>
               </div>
             </div>

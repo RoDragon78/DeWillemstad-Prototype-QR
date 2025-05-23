@@ -6,20 +6,22 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { User, Search } from "lucide-react"
+import { User, Search, RefreshCw } from "lucide-react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 
 interface UnassignedGuestsProps {
   currentTableNumber: string | null
   onAssignGuest: (guestId: string, guestName: string, cabinNumber: string) => void
+  refreshTrigger?: number // Add a prop to trigger refresh from parent
 }
 
-export function UnassignedGuests({ currentTableNumber, onAssignGuest }: UnassignedGuestsProps) {
+export function UnassignedGuests({ currentTableNumber, onAssignGuest, refreshTrigger = 0 }: UnassignedGuestsProps) {
   const [unassignedGuests, setUnassignedGuests] = useState<any[]>([])
   const [filteredGuests, setFilteredGuests] = useState<any[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [assigningGuest, setAssigningGuest] = useState<string | null>(null)
   const supabase = createClientComponentClient()
 
@@ -41,16 +43,24 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
         return
       }
 
-      console.log("Fetched unassigned guests:", data)
+      console.log("Fetched unassigned guests:", data?.length, data)
       setUnassignedGuests(data || [])
       setFilteredGuests(data || [])
     } catch (error) {
       console.error("Error in fetchUnassignedGuests:", error)
     } finally {
       setIsLoading(false)
+      setIsRefreshing(false)
     }
   }
 
+  // Manual refresh function
+  const handleManualRefresh = () => {
+    setIsRefreshing(true)
+    fetchUnassignedGuests()
+  }
+
+  // Initial fetch and setup subscription
   useEffect(() => {
     fetchUnassignedGuests()
 
@@ -65,7 +75,7 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
           table: "guest_manifest",
         },
         (payload) => {
-          console.log("Guest manifest change received:", payload)
+          console.log("Guest manifest change received in UnassignedGuests:", payload)
           // Refresh the unassigned guests list
           fetchUnassignedGuests()
         },
@@ -75,7 +85,15 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
     return () => {
       subscription.unsubscribe()
     }
-  }, [supabase])
+  }, [])
+
+  // Refresh when parent triggers it
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      console.log("Refresh triggered from parent:", refreshTrigger)
+      fetchUnassignedGuests()
+    }
+  }, [refreshTrigger])
 
   // Filter guests when search term changes
   useEffect(() => {
@@ -120,6 +138,11 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
       // Immediately remove the guest from local state for better UX
       setUnassignedGuests((prev) => prev.filter((guest) => guest.id !== guestId))
       setFilteredGuests((prev) => prev.filter((guest) => guest.id !== guestId))
+
+      // Fetch fresh data after a short delay to ensure consistency
+      setTimeout(() => {
+        fetchUnassignedGuests()
+      }, 500)
     } catch (error) {
       console.error("Error assigning guest:", error)
       // Refresh the list in case of error
@@ -142,7 +165,7 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
     {} as Record<string, any[]>,
   )
 
-  if (isLoading) {
+  if (isLoading && !isRefreshing) {
     return (
       <div className="mt-4 border rounded-lg p-3 bg-gray-50">
         <LoadingSpinner size={20} text="Loading unassigned guests..." />
@@ -153,7 +176,19 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
   return (
     <div className="mt-4 border rounded-lg p-3 bg-gray-50">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-medium">Unassigned Guests</h3>
+        <div className="flex items-center">
+          <h3 className="text-sm font-medium">Unassigned Guests</h3>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-1 h-6 w-6 p-0"
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={`h-3 w-3 ${isRefreshing ? "animate-spin" : ""}`} />
+            <span className="sr-only">Refresh</span>
+          </Button>
+        </div>
         <Badge variant="outline" className="bg-orange-50 text-orange-700">
           {unassignedGuests.length} guests
         </Badge>
