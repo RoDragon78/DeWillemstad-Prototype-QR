@@ -822,7 +822,7 @@ export default function DashboardPage() {
             variant="ghost"
             onClick={() => {
               clientStorage.removeLocalItem("isAdminAuthenticated")
-              router.push("/admin/login")
+              router.push("/")
             }}
           >
             <LogOut className="h-4 w-4 mr-2" />
