@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Trash2, Plus, Search, RefreshCw, Check, User, Users } from "lucide-react"
+import { Trash2, Plus, Search, RefreshCw, Check, User, Users, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandList, CommandInput, CommandItem, CommandEmpty, CommandGroup } from "@/components/ui/command"
@@ -63,6 +63,7 @@ export default function DashboardPage() {
   // Add state for table guest preview
   const [tableGuestPreview, setTableGuestPreview] = useState([])
   const [showTablePreview, setShowTablePreview] = useState(false)
+  const [removingGuest, setRemovingGuest] = useState(false)
 
   // Check authentication and fetch data
   useEffect(() => {
@@ -147,21 +148,31 @@ export default function DashboardPage() {
   }
 
   // Add function to handle cabin selection
-  const handleCabinSelect = (cabin) => {
+  const handleCabinSelect = async (cabin) => {
     setNewCabinNumber(cabin.cabin_nr)
     setSelectedCabinGuests(cabin.guests)
 
     // If all guests in the cabin have the same nationality, pre-fill it
     const nationalities = new Set()
     for (let i = 0; i < cabin.guests.length; i++) {
-      nationalities.add(cabin.guests[i].nationality)
+      if (cabin.guests[i].nationality) {
+        nationalities.add(cabin.guests[i].nationality)
+      }
     }
 
     if (nationalities.size === 1) {
-      setNewNationality(cabin.guests[0].nationality)
+      setNewNationality(cabin.guests[0].nationality || "")
     }
 
     setCabinSearchOpen(false)
+
+    // If table number is already selected, automatically add the cabin to the table
+    if (newTableNumber) {
+      // Wait for state to update
+      setTimeout(() => {
+        addCabinToTable(cabin.cabin_nr, Array.from(nationalities)[0] || "")
+      }, 100)
+    }
   }
 
   // Preview guests at a table when table number is entered
@@ -214,6 +225,12 @@ export default function DashboardPage() {
       console.log("Fetched guests:", data)
       setGuests(data || [])
       processTableAssignments(data || [])
+
+      // If we have a table number selected, refresh the preview
+      if (newTableNumber) {
+        previewTableGuests(newTableNumber)
+      }
+
       setLoading(false)
     } catch (error) {
       console.error("Error fetching guests:", error)
@@ -591,9 +608,12 @@ export default function DashboardPage() {
   }
 
   // Add a cabin to a table manually - simplified logic
-  const addCabinToTable = async () => {
+  const addCabinToTable = async (cabinNumberToAdd, nationalityToAdd) => {
     try {
-      if (!newTableNumber || !newCabinNumber) {
+      const cabinToAdd = cabinNumberToAdd || newCabinNumber
+      const nationalityToUse = nationalityToAdd || newNationality
+
+      if (!newTableNumber || !cabinToAdd) {
         setStatusMessage({
           type: "error",
           message: "Table number and cabin number are required.",
@@ -616,7 +636,7 @@ export default function DashboardPage() {
       const { data: cabinGuests, error: fetchError } = await supabase
         .from("guest_manifest")
         .select("*")
-        .eq("cabin_nr", newCabinNumber)
+        .eq("cabin_nr", cabinToAdd)
 
       if (fetchError) {
         console.error("Error fetching cabin guests:", fetchError)
@@ -626,7 +646,7 @@ export default function DashboardPage() {
       if (!cabinGuests || cabinGuests.length === 0) {
         setStatusMessage({
           type: "error",
-          message: `Cabin ${newCabinNumber} not found.`,
+          message: `Cabin ${cabinToAdd} not found.`,
         })
         return
       }
@@ -644,7 +664,7 @@ export default function DashboardPage() {
       if (currentTableGuestCount + cabinGuestsCount > TABLE_CAPACITIES[tableNumber]) {
         setStatusMessage({
           type: "error",
-          message: `Table ${tableNumber} does not have enough capacity for cabin ${newCabinNumber}.`,
+          message: `Table ${tableNumber} does not have enough capacity for cabin ${cabinToAdd}.`,
         })
         return
       }
@@ -656,7 +676,7 @@ export default function DashboardPage() {
           .from("guest_manifest")
           .update({
             table_nr: tableNumber,
-            nationality: newNationality || guest.nationality,
+            nationality: nationalityToUse || guest.nationality,
           })
           .eq("id", guest.id)
 
@@ -670,16 +690,13 @@ export default function DashboardPage() {
       await fetchGuests()
 
       // Clear the form
-      setNewTableNumber("")
       setNewCabinNumber("")
       setNewNationality("")
       setSelectedCabinGuests([])
-      setTableGuestPreview([])
-      setShowTablePreview(false)
 
       setStatusMessage({
         type: "success",
-        message: `Cabin ${newCabinNumber} has been assigned to table ${tableNumber}.`,
+        message: `Cabin ${cabinToAdd} has been assigned to table ${tableNumber}.`,
       })
     } catch (error) {
       console.error("Error adding cabin to table:", error)
@@ -689,6 +706,40 @@ export default function DashboardPage() {
       })
       // Refresh data to ensure consistency
       fetchGuests()
+    }
+  }
+
+  // Remove a single guest from a table
+  const removeGuestFromTable = async (guestId) => {
+    try {
+      setRemovingGuest(true)
+      setStatusMessage({
+        type: "info",
+        message: "Removing guest from table...",
+      })
+
+      const { error: updateError } = await supabase.from("guest_manifest").update({ table_nr: null }).eq("id", guestId)
+
+      if (updateError) {
+        console.error("Error removing guest from table:", updateError)
+        throw updateError
+      }
+
+      // Refresh the data
+      await fetchGuests()
+
+      setStatusMessage({
+        type: "success",
+        message: "Guest has been removed from the table.",
+      })
+    } catch (error) {
+      console.error("Error removing guest from table:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to remove guest from table. Please try again.",
+      })
+    } finally {
+      setRemovingGuest(false)
     }
   }
 
@@ -956,9 +1007,19 @@ export default function DashboardPage() {
                           </div>
                           <ul className="space-y-1 max-h-24 overflow-y-auto">
                             {tableGuestPreview.map((guest) => (
-                              <li key={guest.id} className="text-sm flex items-center">
-                                <User className="h-3 w-3 mr-1 text-blue-400" />
-                                {guest.guest_name || "Unknown"} ({guest.cabin_nr})
+                              <li key={guest.id} className="text-sm flex items-center justify-between">
+                                <div className="flex items-center">
+                                  <User className="h-3 w-3 mr-1 text-blue-400" />
+                                  {guest.guest_name || "Unknown"} ({guest.cabin_nr})
+                                </div>
+                                <button
+                                  onClick={() => removeGuestFromTable(guest.id)}
+                                  disabled={removingGuest}
+                                  className="text-red-500 hover:text-red-700 p-1"
+                                  title="Remove guest from table"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
                               </li>
                             ))}
                           </ul>
@@ -1044,7 +1105,11 @@ export default function DashboardPage() {
                       />
                     </div>
 
-                    <Button onClick={addCabinToTable} className="w-full" disabled={!newTableNumber || !newCabinNumber}>
+                    <Button
+                      onClick={() => addCabinToTable()}
+                      className="w-full bg-blue-600 hover:bg-blue-700"
+                      disabled={!newTableNumber || !newCabinNumber}
+                    >
                       Add Cabin to Table
                     </Button>
                   </div>

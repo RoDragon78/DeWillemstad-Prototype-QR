@@ -6,7 +6,7 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Button } from "@/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { AlertCircle, Check, ChevronLeft, ChevronRight } from "lucide-react"
+import { AlertCircle, Check, ChevronLeft, ChevronRight, FileDown, ArrowLeft } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 // Day names
@@ -29,6 +29,7 @@ export default function MealSelectionPage() {
   const [selectedDay, setSelectedDay] = useState(2) // Default to Day 2
   const [mealSelections, setMealSelections] = useState({})
   const [isSaving, setIsSaving] = useState(false)
+  const [isPdfGenerating, setIsPdfGenerating] = useState(false)
   const [error, setError] = useState(null)
   const [validationError, setValidationError] = useState(null)
   const [language, setLanguage] = useState("en")
@@ -88,7 +89,8 @@ export default function MealSelectionPage() {
 
         // Initialize meal selections
         const initialSelections = {}
-        data.forEach((guest) => {
+        for (let i = 0; i < data.length; i++) {
+          const guest = data[i]
           initialSelections[guest.id] = {
             2: 0,
             3: 0,
@@ -97,7 +99,7 @@ export default function MealSelectionPage() {
             6: 0,
             7: 0,
           }
-        })
+        }
         setMealSelections(initialSelections)
 
         // Check for existing selections
@@ -150,15 +152,20 @@ export default function MealSelectionPage() {
 
         if (data && data.length > 0) {
           // Update meal selections with existing data
-          const existingSelections = { ...mealSelections }
+          const existingSelections = {}
+          for (const guestId in mealSelections) {
+            existingSelections[guestId] = { ...mealSelections[guestId] }
+          }
+
           const newDaysWithSelections = { ...daysWithSelections }
 
-          data.forEach((selection) => {
+          for (let i = 0; i < data.length; i++) {
+            const selection = data[i]
             if (existingSelections[selection.guest_id]) {
               existingSelections[selection.guest_id][selection.day] = selection.meal_id
               newDaysWithSelections[selection.day] = true
             }
-          })
+          }
 
           setMealSelections(existingSelections)
           setDaysWithSelections(newDaysWithSelections)
@@ -209,9 +216,14 @@ export default function MealSelectionPage() {
 
     // Check each day - only mark as complete if ALL guests have made a selection
     for (let day = 2; day <= 7; day++) {
-      const allGuestsSelected = guests.every((guest) => {
-        return mealSelections[guest.id]?.[day] > 0
-      })
+      let allGuestsSelected = true
+      for (let i = 0; i < guests.length; i++) {
+        const guest = guests[i]
+        if (!mealSelections[guest.id] || !mealSelections[guest.id][day]) {
+          allGuestsSelected = false
+          break
+        }
+      }
 
       if (allGuestsSelected) {
         newDaysWithSelections[day] = true
@@ -223,13 +235,17 @@ export default function MealSelectionPage() {
 
   // Update meal selection
   const updateMealSelection = useCallback((guestId, day, mealId) => {
-    setMealSelections((prev) => ({
-      ...prev,
-      [guestId]: {
-        ...prev[guestId],
-        [day]: mealId,
-      },
-    }))
+    setMealSelections((prev) => {
+      const newSelections = {}
+      for (const id in prev) {
+        newSelections[id] = { ...prev[id] }
+      }
+      if (!newSelections[guestId]) {
+        newSelections[guestId] = {}
+      }
+      newSelections[guestId][day] = mealId
+      return newSelections
+    })
     // Clear validation error when a selection is made
     setValidationError(null)
   }, [])
@@ -262,6 +278,35 @@ export default function MealSelectionPage() {
     e.stopPropagation()
     if (selectedDay < 7) {
       setSelectedDay(selectedDay + 1)
+    }
+  }
+
+  // Generate PDF
+  const generatePdf = async () => {
+    setIsPdfGenerating(true)
+    try {
+      // Import the PDF generation function dynamically
+      const { generateAndDownloadPdf } = await import("@/components/pdf-service")
+
+      // Prepare guest names for PDF
+      const guestNames = guests.map((guest) => guest.guest_name)
+
+      // Call the PDF generation function
+      await generateAndDownloadPdf({
+        cabinNumber,
+        guests,
+        mealSelections,
+        menuItems,
+        language,
+      })
+
+      return true
+    } catch (error) {
+      console.error("Error generating PDF:", error)
+      alert("Failed to generate PDF. Please try again.")
+      return false
+    } finally {
+      setIsPdfGenerating(false)
     }
   }
 
@@ -326,6 +371,32 @@ export default function MealSelectionPage() {
     }
   }
 
+  // Handle save and generate PDF
+  const handleSaveAndGeneratePdf = async () => {
+    if (!validateSelections()) {
+      setValidationError("Please select a meal for each guest for all days before saving.")
+      return
+    }
+
+    setIsSaving(true)
+    setIsPdfGenerating(true)
+    setValidationError(null)
+
+    try {
+      // First save the selections
+      await handleSave()
+
+      // Then generate the PDF
+      await generatePdf()
+    } catch (error) {
+      console.error("Error in save and generate PDF:", error)
+      alert("There was an error processing your request. Please try again.")
+    } finally {
+      setIsSaving(false)
+      setIsPdfGenerating(false)
+    }
+  }
+
   const handleLanguageChange = useCallback((lang) => {
     setLanguage(lang)
     localStorage.setItem("language", lang)
@@ -364,6 +435,11 @@ export default function MealSelectionPage() {
     [menuItems],
   )
 
+  // Handle back button click
+  const handleBackToHome = () => {
+    router.push("/")
+  }
+
   if (isLoading) {
     return <div className="flex min-h-screen items-center justify-center">Loading...</div>
   }
@@ -400,6 +476,14 @@ export default function MealSelectionPage() {
           <h2 className="text-2xl font-bold mb-2">Thank You!</h2>
           <p className="text-lg mb-2">Your meal choices have been saved successfully.</p>
           <p className="text-gray-600 mb-6">Returning to home page in {redirectCountdown} seconds...</p>
+
+          <div className="flex justify-center gap-4 mb-8">
+            <Button onClick={handleBackToHome}>Return to Home Now</Button>
+            <Button variant="outline" onClick={generatePdf} disabled={isPdfGenerating}>
+              <FileDown className="mr-2 h-4 w-4" />
+              {isPdfGenerating ? "Generating PDF..." : "Save as PDF"}
+            </Button>
+          </div>
 
           <div className="max-w-2xl mx-auto text-left">
             <h3 className="text-lg font-medium mb-4">Your selections:</h3>
@@ -455,7 +539,12 @@ export default function MealSelectionPage() {
           </h2>
         </div>
 
-        <div className="mb-2 flex justify-end">
+        <div className="mb-2 flex justify-between items-center">
+          <Button variant="outline" onClick={handleBackToHome} className="flex items-center">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Home
+          </Button>
+
           <select
             className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm"
             value={language}
@@ -562,16 +651,31 @@ export default function MealSelectionPage() {
             Back
           </Button>
 
-          <Button
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              handleSave()
-            }}
-            disabled={isSaving || !validateSelections()}
-          >
-            {isSaving ? "Saving..." : "Submit Selections"}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              className="bg-blue-600 hover:bg-blue-700"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                handleSaveAndGeneratePdf()
+              }}
+              disabled={isSaving || isPdfGenerating || !validateSelections()}
+            >
+              <FileDown className="mr-2 h-4 w-4" />
+              {isPdfGenerating || isSaving ? "Processing..." : "Save PDF and Submit"}
+            </Button>
+
+            <Button
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                handleSave()
+              }}
+              disabled={isSaving || !validateSelections()}
+            >
+              {isSaving ? "Saving..." : "Submit Selections"}
+            </Button>
+          </div>
 
           <Button
             variant="outline"

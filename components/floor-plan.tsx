@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { X } from "lucide-react"
 
 // Simplified table positions
 const TABLE_POSITIONS = {
@@ -37,6 +38,7 @@ export function FloorPlan(props) {
   const [tableGuests, setTableGuests] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [removingGuest, setRemovingGuest] = useState(false)
   const supabase = createClientComponentClient()
 
   // Fetch fresh data for the selected table when dialog opens
@@ -97,6 +99,33 @@ export function FloorPlan(props) {
       setError("An unexpected error occurred")
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Remove a guest from a table
+  const removeGuestFromTable = async (guestId) => {
+    try {
+      setRemovingGuest(true)
+
+      const { error } = await supabase.from("guest_manifest").update({ table_nr: null }).eq("id", guestId)
+
+      if (error) {
+        console.error("Error removing guest from table:", error)
+        throw error
+      }
+
+      // Refresh the table guests
+      fetchTableGuests(selectedTable)
+
+      // Notify parent component to refresh all data
+      if (onTableUpdate) {
+        onTableUpdate()
+      }
+    } catch (error) {
+      console.error("Error removing guest from table:", error)
+      setError("Failed to remove guest from table")
+    } finally {
+      setRemovingGuest(false)
     }
   }
 
@@ -192,19 +221,27 @@ export function FloorPlan(props) {
 
     for (let i = 0; i < assignments.length; i++) {
       const assignment = assignments[i]
-      const guestNames = []
 
       for (let j = 0; j < assignment.guests.length; j++) {
-        guestNames.push(assignment.guests[j].guest_name)
+        const guest = assignment.guests[j]
+        rows.push(
+          <tr key={guest.id}>
+            <td className="px-2 py-1">{guest.cabin_nr}</td>
+            <td className="px-2 py-1">{guest.guest_name}</td>
+            <td className="px-2 py-1">{guest.nationality || "Unknown"}</td>
+            <td className="px-2 py-1">
+              <button
+                onClick={() => removeGuestFromTable(guest.id)}
+                disabled={removingGuest}
+                className="text-red-500 hover:text-red-700 p-1"
+                title="Remove guest from table"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </td>
+          </tr>,
+        )
       }
-
-      rows.push(
-        <tr key={i}>
-          <td className="px-2 py-1">{assignment.cabins[0]}</td>
-          <td className="px-2 py-1">{guestNames.join(", ")}</td>
-          <td className="px-2 py-1">{assignment.nationality}</td>
-        </tr>,
-      )
     }
 
     return rows
@@ -320,7 +357,7 @@ export function FloorPlan(props) {
                 </div>
 
                 <div className="mt-2">
-                  <h4 className="font-medium mb-2">Assigned Cabins:</h4>
+                  <h4 className="font-medium mb-2">Assigned Guests:</h4>
                   {isLoading ? (
                     <p className="text-gray-500">Loading...</p>
                   ) : error ? (
@@ -331,15 +368,16 @@ export function FloorPlan(props) {
                         <thead className="bg-gray-50">
                           <tr>
                             <th className="px-2 py-1 text-left">Cabin</th>
-                            <th className="px-2 py-1 text-left">Guests</th>
+                            <th className="px-2 py-1 text-left">Guest</th>
                             <th className="px-2 py-1 text-left">Nationality</th>
+                            <th className="px-2 py-1 text-left w-8"></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y">{renderTableAssignments()}</tbody>
                       </table>
                     </div>
                   ) : (
-                    <p className="text-gray-500">No cabins assigned to this table.</p>
+                    <p className="text-gray-500">No guests assigned to this table.</p>
                   )}
                 </div>
               </div>

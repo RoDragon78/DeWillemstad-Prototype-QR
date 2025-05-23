@@ -1,18 +1,7 @@
-import type { Guest } from "@/types/guest"
-import type { MenuItem } from "@/types/menu-item"
-
 // Day names
 const DAY_NAMES = ["", "", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 
-interface PdfGenerationOptions {
-  cabinNumber: string
-  guests: Guest[]
-  mealSelections: Record<string, Record<number, number>>
-  menuItems: MenuItem[]
-  language: "en" | "nl" | "de"
-}
-
-export async function generateAndDownloadPdf(options: PdfGenerationOptions): Promise<boolean> {
+export async function generateAndDownloadPdf(options) {
   const { cabinNumber, guests, mealSelections, menuItems, language } = options
 
   try {
@@ -50,14 +39,27 @@ export async function generateAndDownloadPdf(options: PdfGenerationOptions): Pro
     doc.text(`Cabin: ${cabinNumber}`, 105, 42, { align: "center" })
     doc.setFontSize(normalFontSize)
     doc.setFont("helvetica", "normal")
-    doc.text(`Guests: ${guests.map((g) => g.guest_name).join(", ")}`, 105, 48, { align: "center" })
+
+    // Get guest names
+    const guestNames = []
+    for (let i = 0; i < guests.length; i++) {
+      guestNames.push(guests[i].guest_name)
+    }
+    doc.text(`Guests: ${guestNames.join(", ")}`, 105, 48, { align: "center" })
 
     // Function to get meal name by ID
-    const getMealName = (mealId: number) => {
-      const meal = menuItems.find((m) => m.id === mealId)
+    const getMealName = (mealId) => {
+      let meal = null
+      for (let i = 0; i < menuItems.length; i++) {
+        if (menuItems[i].id === mealId) {
+          meal = menuItems[i]
+          break
+        }
+      }
+
       if (!meal) return "No selection"
 
-      // Avoid using dynamic property access that might trigger __rest
+      // Get meal name based on language
       if (language === "en") return meal.name_en
       if (language === "nl") return meal.name_nl || meal.name_en
       if (language === "de") return meal.name_de || meal.name_en
@@ -69,7 +71,14 @@ export async function generateAndDownloadPdf(options: PdfGenerationOptions): Pro
 
     for (let day = 2; day <= 7; day++) {
       // Check if any guest has selections for this day
-      const hasSelections = guests.some((guest) => mealSelections[guest.id]?.[day] > 0)
+      let hasSelections = false
+      for (let i = 0; i < guests.length; i++) {
+        const guest = guests[i]
+        if (mealSelections[guest.id] && mealSelections[guest.id][day] > 0) {
+          hasSelections = true
+          break
+        }
+      }
 
       if (hasSelections) {
         // Add page break if needed
@@ -100,8 +109,9 @@ export async function generateAndDownloadPdf(options: PdfGenerationOptions): Pro
 
         // Add guest selections
         doc.setFont("helvetica", "normal")
-        guests.forEach((guest) => {
-          const mealId = mealSelections[guest.id]?.[day]
+        for (let i = 0; i < guests.length; i++) {
+          const guest = guests[i]
+          const mealId = mealSelections[guest.id] ? mealSelections[guest.id][day] : null
           const mealName = getMealName(mealId)
 
           doc.text(guest.guest_name, 25, yPosition)
@@ -112,7 +122,7 @@ export async function generateAndDownloadPdf(options: PdfGenerationOptions): Pro
 
           // Adjust position based on number of lines
           yPosition += Math.max(6, mealNameLines.length * 5)
-        })
+        }
 
         // Add space after each day
         yPosition += 8
