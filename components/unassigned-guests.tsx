@@ -17,34 +17,35 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
   const [filteredGuests, setFilteredGuests] = useState<any[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [isLoading, setIsLoading] = useState(true)
+  const [assigningGuest, setAssigningGuest] = useState<string | null>(null)
   const supabase = createClientComponentClient()
 
   // Fetch unassigned guests
-  useEffect(() => {
-    async function fetchUnassignedGuests() {
-      try {
-        setIsLoading(true)
-        const { data, error } = await supabase
-          .from("guest_manifest")
-          .select("*")
-          .is("table_nr", null)
-          .order("cabin_nr", { ascending: true })
-          .order("guest_name", { ascending: true })
+  const fetchUnassignedGuests = async () => {
+    try {
+      setIsLoading(true)
+      const { data, error } = await supabase
+        .from("guest_manifest")
+        .select("*")
+        .is("table_nr", null)
+        .order("cabin_nr", { ascending: true })
+        .order("guest_name", { ascending: true })
 
-        if (error) {
-          console.error("Error fetching unassigned guests:", error)
-          return
-        }
-
-        setUnassignedGuests(data || [])
-        setFilteredGuests(data || [])
-      } catch (error) {
-        console.error("Error in fetchUnassignedGuests:", error)
-      } finally {
-        setIsLoading(false)
+      if (error) {
+        console.error("Error fetching unassigned guests:", error)
+        return
       }
-    }
 
+      setUnassignedGuests(data || [])
+      setFilteredGuests(data || [])
+    } catch (error) {
+      console.error("Error in fetchUnassignedGuests:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
     fetchUnassignedGuests()
 
     // Set up real-time subscription
@@ -85,6 +86,16 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
     setFilteredGuests(filtered)
   }, [searchTerm, unassignedGuests])
 
+  // Handle guest assignment
+  const handleAssignGuest = async (guestId: string, guestName: string, cabinNumber: string) => {
+    setAssigningGuest(guestId)
+    try {
+      await onAssignGuest(guestId, guestName, cabinNumber)
+    } finally {
+      setAssigningGuest(null)
+    }
+  }
+
   // Group guests by cabin
   const groupedGuests = filteredGuests.reduce(
     (acc, guest) => {
@@ -117,7 +128,7 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
           placeholder="Search guests..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-8 text-sm"
+          className="pl-8 text-sm h-8"
         />
       </div>
 
@@ -131,17 +142,17 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
                   <div key={guest.id} className="flex items-center justify-between bg-white p-2 rounded border text-sm">
                     <div className="flex items-center">
                       <User className="h-3 w-3 mr-1 text-gray-400" />
-                      <span>{guest.guest_name || "Unknown"}</span>
+                      <span className="font-medium">{guest.guest_name || "Unknown"}</span>
                       {guest.nationality && <span className="ml-1 text-xs text-gray-500">({guest.nationality})</span>}
                     </div>
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-6 px-2 text-xs"
-                      disabled={!currentTableNumber}
-                      onClick={() => onAssignGuest(guest.id, guest.guest_name, guest.cabin_nr)}
+                      className="h-6 px-2 text-xs hover:bg-blue-50 hover:text-blue-700"
+                      disabled={!currentTableNumber || assigningGuest === guest.id}
+                      onClick={() => handleAssignGuest(guest.id, guest.guest_name, guest.cabin_nr)}
                     >
-                      Assign
+                      {assigningGuest === guest.id ? "..." : "Assign"}
                     </Button>
                   </div>
                 ))}
@@ -154,6 +165,12 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
           </div>
         )}
       </div>
+
+      {!currentTableNumber && unassignedGuests.length > 0 && (
+        <div className="mt-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
+          Enter a table number above to assign guests
+        </div>
+      )}
     </div>
   )
 }

@@ -1088,7 +1088,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {/* Update the metrics section to include unassigned tables: */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
               <p className="text-sm text-blue-600 font-medium">Total Guests</p>
               <p className="text-2xl font-bold">{totalGuests}</p>
@@ -1101,11 +1102,13 @@ export default function DashboardPage() {
               <p className="text-sm text-amber-600 font-medium">Tables Used</p>
               <p className="text-2xl font-bold">{tablesUsed}</p>
             </div>
-            // Update the dashboard metrics to include unassigned guests count // Find the metrics section with the grid
-            of stats and update the unassigned guests card:
             <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
               <p className="text-sm text-orange-600 font-medium">Unassigned Guests</p>
               <p className="text-2xl font-bold">{unassignedGuests}</p>
+            </div>
+            <div className="bg-red-50 p-3 rounded-lg border border-red-100">
+              <p className="text-sm text-red-600 font-medium">Unassigned Tables</p>
+              <p className="text-2xl font-bold">{Object.keys(TABLE_CAPACITIES).length - tablesUsed}</p>
             </div>
             <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
               <p className="text-sm text-purple-600 font-medium">Booking Groups</p>
@@ -1212,13 +1215,13 @@ export default function DashboardPage() {
                               <CommandList>
                                 <CommandEmpty>No cabins found.</CommandEmpty>
                                 <CommandGroup>
+                                  {/* 5. Update the CommandItem styling in the cabin search to make it more clickable */}
                                   {cabinSuggestions.map((cabin) => (
-                                    // 5. Update the CommandItem styling in the cabin search to make it more clickable
                                     <CommandItem
                                       key={cabin.cabin_nr}
                                       value={cabin.cabin_nr}
                                       onSelect={() => handleCabinSelect(cabin)}
-                                      className="flex justify-between items-center cursor-pointer hover:bg-blue-50 active:bg-blue-100 transition-colors"
+                                      className="flex justify-between items-center cursor-pointer hover:bg-blue-50 active:bg-blue-100 transition-colors p-2"
                                     >
                                       <div className="flex items-center">
                                         <Check
@@ -1228,19 +1231,21 @@ export default function DashboardPage() {
                                               : "opacity-0"
                                           }`}
                                         />
-                                        {cabin.cabin_nr} - {cabin.guests.length}{" "}
-                                        {cabin.guests.length === 1 ? "guest" : "guests"}
+                                        <span className="text-sm font-medium">
+                                          {cabin.cabin_nr} - {cabin.guests.length}{" "}
+                                          {cabin.guests.length === 1 ? "guest" : "guests"}
+                                        </span>
                                       </div>
 
                                       {cabin.table_nr ? (
-                                        <div className="flex items-center">
-                                          <Badge variant="outline" className="mr-2 bg-blue-50 text-blue-700">
+                                        <div className="flex items-center gap-2">
+                                          <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">
                                             Table {cabin.table_nr}
                                           </Badge>
                                           <Button
                                             size="sm"
                                             variant="ghost"
-                                            className="h-7 px-2 text-xs hover:bg-blue-100 hover:text-blue-700"
+                                            className="h-6 px-2 text-xs hover:bg-blue-100 hover:text-blue-700"
                                             onClick={(e) => {
                                               e.stopPropagation()
                                               handleQuickAssign(cabin)
@@ -1253,7 +1258,7 @@ export default function DashboardPage() {
                                         <Button
                                           size="sm"
                                           variant="ghost"
-                                          className="h-7 px-2 text-xs hover:bg-blue-100 hover:text-blue-700"
+                                          className="h-6 px-2 text-xs hover:bg-blue-100 hover:text-blue-700"
                                           onClick={(e) => {
                                             e.stopPropagation()
                                             handleQuickAssign(cabin)
