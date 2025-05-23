@@ -1,16 +1,13 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useState } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import { Trash2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Trash2, Users, AlertCircle, CheckCircle, X } from "lucide-react"
 
-// Updated table positions with new layout and table 15 added
-// Row 1: Tables 1, 9, 10, 20
-// Row 2: Tables 2, 8, 11, 19
-// Row 3: Tables 3, 7, 12, 18
-// Row 4: Tables 4, 6, 13, 17
-// Row 5: Tables 14, 15, 16
+// Updated table positions - moved tables 14, 15, 16 further right
 const TABLE_POSITIONS = {
   // Row 1 - Top row
   1: { x: 50, y: 30, width: 100, height: 80, shape: "rect" },
@@ -36,264 +33,115 @@ const TABLE_POSITIONS = {
   13: { x: 330, y: 330, width: 80, height: 80, shape: "circle" },
   17: { x: 460, y: 330, width: 120, height: 60, shape: "rect" },
 
-  // Row 5 - Bottom row
-  14: { x: 120, y: 430, width: 140, height: 60, shape: "rect" },
-  15: { x: 290, y: 430, width: 120, height: 60, shape: "rect" }, // New table 15
-  16: { x: 440, y: 430, width: 100, height: 80, shape: "rect" },
+  // Row 5 - Bottom row (moved further right)
+  14: { x: 180, y: 430, width: 120, height: 60, shape: "rect" },
+  15: { x: 330, y: 430, width: 120, height: 60, shape: "rect" }, // Fixed to rect for 6 guests
+  16: { x: 480, y: 430, width: 100, height: 80, shape: "rect" },
 }
 
-export function FloorPlan(props) {
-  const tableCapacities = props.tableCapacities || {}
-  const tableAssignments = props.tableAssignments || []
-  const guests = props.guests || []
-  const onTableUpdate = props.onTableUpdate
-
+export function FloorPlan({ tableCapacities, tableAssignments, guests, onTableUpdate }) {
   const [selectedTable, setSelectedTable] = useState(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
   const [tableGuests, setTableGuests] = useState([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [showTableDialog, setShowTableDialog] = useState(false)
   const [removingGuest, setRemovingGuest] = useState(false)
-  const tableGuestsRef = useRef(null)
+  const [statusMessage, setStatusMessage] = useState(null)
   const supabase = createClientComponentClient()
 
-  // Fetch fresh data for the selected table when dialog opens
-  useEffect(() => {
-    if (selectedTable && dialogOpen) {
-      fetchTableGuests(selectedTable)
-    }
-  }, [selectedTable, dialogOpen])
+  // Get table color based on occupancy
+  const getTableColor = (tableNumber) => {
+    const capacity = tableCapacities[tableNumber] || 0
+    const currentGuests = guests.filter((guest) => guest.table_nr === tableNumber).length
+    const occupancyRate = capacity > 0 ? currentGuests / capacity : 0
 
-  // Set up real-time subscription for guest_manifest table
-  useEffect(() => {
-    const subscription = supabase
-      .channel("guest_manifest_changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "guest_manifest",
-        },
-        (payload) => {
-          console.log("Change received in FloorPlan:", payload)
-          // If we have a selected table open, refresh its data
-          if (selectedTable && dialogOpen) {
-            fetchTableGuests(selectedTable)
-          }
-          // Notify parent component to refresh all data
-          if (onTableUpdate) {
-            onTableUpdate()
-          }
-        },
-      )
-      .subscribe()
+    if (currentGuests === 0) return "rgb(229, 231, 235)" // Empty - gray
+    if (occupancyRate <= 0.25) return "rgb(191, 219, 254)" // 1-25% - light blue
+    if (occupancyRate <= 0.5) return "rgb(147, 197, 253)" // 26-50% - medium light blue
+    if (occupancyRate <= 0.75) return "rgb(96, 165, 250)" // 51-75% - medium blue
+    if (occupancyRate < 1) return "rgb(59, 130, 246)" // 76-99% - blue
+    return "rgb(37, 99, 235)" // 100% - dark blue
+  }
 
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [supabase, selectedTable, dialogOpen, onTableUpdate])
+  // Get occupancy text for display
+  const getOccupancyText = (tableNumber) => {
+    const capacity = tableCapacities[tableNumber] || 0
+    const currentGuests = guests.filter((guest) => guest.table_nr === tableNumber).length
+    return `${currentGuests}/${capacity}`
+  }
 
-  // Fetch guests for a specific table directly from Supabase
-  const fetchTableGuests = async (tableNumber) => {
+  // Handle table click to show guests
+  const handleTableClick = async (tableNumber) => {
     try {
-      setIsLoading(true)
-      setError(null)
+      setSelectedTable(tableNumber)
 
-      const { data, error } = await supabase.from("guest_manifest").select("*").eq("table_nr", tableNumber)
+      const { data, error } = await supabase
+        .from("guest_manifest")
+        .select("*")
+        .eq("table_nr", tableNumber)
+        .order("cabin_nr", { ascending: true })
 
       if (error) {
         console.error("Error fetching table guests:", error)
-        setError("Error fetching table guests: " + error.message)
-        return
+        throw error
       }
 
-      console.log("Fetched table guests:", data)
       setTableGuests(data || [])
-    } catch (err) {
-      console.error("Error in fetchTableGuests:", err)
-      setError("An unexpected error occurred")
-    } finally {
-      setIsLoading(false)
+      setShowTableDialog(true)
+    } catch (error) {
+      console.error("Error fetching table guests:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to fetch table guests. Please try again.",
+      })
     }
   }
 
-  // Remove a guest from a table
-  const removeGuestFromTable = async (guestId, event) => {
+  // Remove individual guest from table
+  const removeGuestFromTable = async (guestId, guestName) => {
     try {
-      // Prevent event propagation to avoid dialog closing
-      if (event) {
-        event.preventDefault()
-        event.stopPropagation()
-      }
-
       setRemovingGuest(true)
-      setError(null)
-
-      // Store scroll position before update
-      const scrollPosition = tableGuestsRef.current ? tableGuestsRef.current.scrollTop : 0
 
       const { error } = await supabase.from("guest_manifest").update({ table_nr: null }).eq("id", guestId)
 
       if (error) {
-        console.error("Error removing guest from table:", error)
+        console.error("Error removing guest:", error)
         throw error
       }
 
-      // Refresh the table guests
-      await fetchTableGuests(selectedTable)
+      // Refresh table guests
+      const { data, error: fetchError } = await supabase
+        .from("guest_manifest")
+        .select("*")
+        .eq("table_nr", selectedTable)
+        .order("cabin_nr", { ascending: true })
 
-      // Restore scroll position after state update and DOM rendering
-      if (tableGuestsRef.current) {
-        requestAnimationFrame(() => {
-          if (tableGuestsRef.current) {
-            tableGuestsRef.current.scrollTop = scrollPosition
-          }
-        })
+      if (fetchError) {
+        console.error("Error fetching updated table guests:", fetchError)
+        throw fetchError
       }
 
-      // Notify parent component to refresh all data
+      setTableGuests(data || [])
+
+      // Trigger parent update
       if (onTableUpdate) {
         onTableUpdate()
       }
+
+      setStatusMessage({
+        type: "success",
+        message: `${guestName} has been removed from Table ${selectedTable}.`,
+      })
     } catch (error) {
-      console.error("Error removing guest from table:", error)
-      setError("Failed to remove guest from table")
+      console.error("Error removing guest:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to remove guest. Please try again.",
+      })
     } finally {
       setRemovingGuest(false)
     }
   }
 
-  // Get assignments for a specific table
-  const getTableAssignments = (tableNumber) => {
-    // Group guests by cabin and nationality
-    const cabinGroups = {}
-
-    for (let i = 0; i < tableGuests.length; i++) {
-      const guest = tableGuests[i]
-      // Make sure we have valid cabin number
-      const cabinKey = guest.cabin_nr || "Unknown"
-      const nationalityKey = guest.nationality || "Unknown"
-      const key = cabinKey + "_" + nationalityKey
-
-      if (!cabinGroups[key]) {
-        cabinGroups[key] = []
-      }
-      cabinGroups[key].push(guest)
-    }
-
-    // Convert to table assignments format
-    const result = []
-    const keys = Object.keys(cabinGroups)
-
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i]
-      const guestsForKey = cabinGroups[key]
-      const parts = key.split("_")
-      const cabin = parts[0]
-      const nationality = parts.length > 1 ? parts[1] : "Unknown"
-
-      result.push({
-        table_number: tableNumber,
-        cabins: [cabin],
-        nationality: nationality,
-        booking_number: guestsForKey[0] ? guestsForKey[0].booking_number || "" : "",
-        guests: guestsForKey,
-      })
-    }
-
-    return result
-  }
-
-  // Get occupancy percentage for a table
-  const getTableOccupancy = (tableNumber) => {
-    const capacity = tableCapacities[tableNumber] || 0
-    let count = 0
-    for (let i = 0; i < guests.length; i++) {
-      if (guests[i].table_nr === tableNumber) {
-        count++
-      }
-    }
-    return capacity > 0 ? (count / capacity) * 100 : 0
-  }
-
-  // Get current occupancy count for a table
-  const getTableOccupancyCount = (tableNumber) => {
-    let count = 0
-    for (let i = 0; i < guests.length; i++) {
-      if (guests[i].table_nr === tableNumber) {
-        count++
-      }
-    }
-    return count
-  }
-
-  // Get color based on occupancy - blue gradient color scheme
-  const getTableColor = (tableNumber) => {
-    const occupancy = getTableOccupancy(tableNumber)
-
-    if (occupancy === 0) return "rgb(239, 246, 255)" // Empty - lightest blue
-    if (occupancy <= 25) return "rgb(219, 234, 254)" // 1-25% - very light blue
-    if (occupancy <= 50) return "rgb(191, 219, 254)" // 26-50% - light blue
-    if (occupancy <= 75) return "rgb(147, 197, 253)" // 51-75% - medium blue
-    if (occupancy < 100) return "rgb(96, 165, 250)" // 76-99% - blue
-    return "rgb(59, 130, 246)" // 100% - darker blue
-  }
-
-  // Get border color based on occupancy - blue gradient color scheme
-  const getTableBorderColor = (tableNumber) => {
-    const occupancy = getTableOccupancy(tableNumber)
-
-    if (occupancy === 0) return "rgb(191, 219, 254)" // Empty - light blue
-    if (occupancy <= 25) return "rgb(147, 197, 253)" // 1-25% - medium light blue
-    if (occupancy <= 50) return "rgb(96, 165, 250)" // 26-50% - medium blue
-    if (occupancy <= 75) return "rgb(59, 130, 246)" // 51-75% - blue
-    if (occupancy < 100) return "rgb(37, 99, 235)" // 76-99% - medium dark blue
-    return "rgb(29, 78, 216)" // 100% - dark blue
-  }
-
-  // Handle table click
-  const handleTableClick = (tableNumber) => {
-    setSelectedTable(tableNumber)
-    setDialogOpen(true)
-  }
-
-  // Render table assignments
-  const renderTableAssignments = () => {
-    if (!selectedTable) return null
-
-    const assignments = getTableAssignments(selectedTable)
-    const rows = []
-
-    for (let i = 0; i < assignments.length; i++) {
-      const assignment = assignments[i]
-
-      for (let j = 0; j < assignment.guests.length; j++) {
-        const guest = assignment.guests[j]
-        rows.push(
-          <tr key={guest.id}>
-            <td className="px-2 py-1">{guest.cabin_nr}</td>
-            <td className="px-2 py-1">{guest.guest_name}</td>
-            <td className="px-2 py-1">{guest.nationality || "Unknown"}</td>
-            <td className="px-2 py-1">
-              <button
-                onClick={(e) => removeGuestFromTable(guest.id, e)}
-                disabled={removingGuest}
-                className="text-red-500 hover:text-red-700 p-1"
-                title="Remove guest from table"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
-            </td>
-          </tr>,
-        )
-      }
-    }
-
-    return rows
-  }
-
-  // Render table shapes
+  // Render tables with occupancy display
   const renderTables = () => {
     const tables = []
     const tableNumbers = Object.keys(TABLE_POSITIONS)
@@ -302,8 +150,9 @@ export function FloorPlan(props) {
       const tableNumber = tableNumbers[i]
       const position = TABLE_POSITIONS[tableNumber]
       const tableNum = Number.parseInt(tableNumber, 10)
-      const isSelected = selectedTable === tableNum
+      const occupancyText = getOccupancyText(tableNum)
 
+      // Render table shape
       if (position.shape === "rect") {
         tables.push(
           <rect
@@ -315,10 +164,10 @@ export function FloorPlan(props) {
             rx={10}
             ry={10}
             fill={getTableColor(tableNum)}
-            stroke={getTableBorderColor(tableNum)}
-            strokeWidth={isSelected ? 3 : 2}
-            onClick={() => handleTableClick(tableNum)}
+            stroke="rgb(75, 85, 99)"
+            strokeWidth={2}
             className="cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => handleTableClick(tableNum)}
           />,
         )
       } else {
@@ -329,171 +178,166 @@ export function FloorPlan(props) {
             cy={position.y + position.height / 2}
             r={position.width / 2}
             fill={getTableColor(tableNum)}
-            stroke={getTableBorderColor(tableNum)}
-            strokeWidth={isSelected ? 3 : 2}
-            onClick={() => handleTableClick(tableNum)}
+            stroke="rgb(75, 85, 99)"
+            strokeWidth={2}
             className="cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => handleTableClick(tableNum)}
           />,
         )
       }
+
+      // Add table number
+      tables.push(
+        <text
+          key={`table-${tableNumber}`}
+          x={position.x + position.width / 2}
+          y={position.y + position.height / 2 - 8}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="white"
+          fontWeight="bold"
+          fontSize="16"
+          className="select-none pointer-events-none"
+        >
+          {tableNumber}
+        </text>,
+      )
+
+      // Add occupancy text
+      tables.push(
+        <text
+          key={`occupancy-${tableNumber}`}
+          x={position.x + position.width / 2}
+          y={position.y + position.height / 2 + 8}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="white"
+          fontWeight="medium"
+          fontSize="12"
+          className="select-none pointer-events-none"
+        >
+          {occupancyText}
+        </text>,
+      )
     }
 
     return tables
   }
 
-  // Render table labels
-  const renderTableLabels = () => {
-    const labels = []
-    const tableNumbers = Object.keys(TABLE_POSITIONS)
+  // Render compact occupancy legend
+  const renderOccupancyLegend = () => {
+    const legendItems = [
+      { label: "Empty", color: "rgb(229, 231, 235)" },
+      { label: "1-25%", color: "rgb(191, 219, 254)" },
+      { label: "26-50%", color: "rgb(147, 197, 253)" },
+      { label: "51-75%", color: "rgb(96, 165, 250)" },
+      { label: "76-99%", color: "rgb(59, 130, 246)" },
+      { label: "100%", color: "rgb(37, 99, 235)" },
+    ]
 
-    for (let i = 0; i < tableNumbers.length; i++) {
-      const tableNumber = tableNumbers[i]
-      const position = TABLE_POSITIONS[tableNumber]
-      const tableNum = Number.parseInt(tableNumber, 10)
-      const currentOccupancy = getTableOccupancyCount(tableNum)
-      const capacity = tableCapacities[tableNum] || 0
+    return (
+      <g transform="translate(20, 480)">
+        <text x="0" y="0" fontWeight="medium" fontSize="11" fill="rgb(75, 85, 99)">
+          Occupancy:
+        </text>
+        {legendItems.map((item, index) => {
+          const yPos = 15 + Math.floor(index / 2) * 20
+          const xPos = (index % 2) * 80
 
-      labels.push(
-        <g key={`label-${tableNumber}`}>
-          <text
-            x={position.x + position.width / 2}
-            y={position.y + position.height / 2 - 8}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fill="rgb(17, 24, 39)"
-            fontWeight="bold"
-            fontSize="16"
-            className="select-none"
-          >
-            {tableNumber}
-          </text>
-          <text
-            x={position.x + position.width / 2}
-            y={position.y + position.height / 2 + 12}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fill="rgb(75, 85, 99)"
-            fontSize="12"
-            className="select-none"
-          >
-            {currentOccupancy}/{capacity}
-          </text>
-        </g>,
-      )
-    }
-
-    return labels
+          return (
+            <g key={item.label} transform={`translate(${xPos}, ${yPos})`}>
+              <circle cx="6" cy="0" r="5" fill={item.color} stroke="rgb(75, 85, 99)" strokeWidth="1" />
+              <text x="16" y="3" fontSize="10" fill="rgb(75, 85, 99)">
+                {item.label}
+              </text>
+            </g>
+          )
+        })}
+      </g>
+    )
   }
 
   return (
-    <div className="relative w-full" style={{ height: "600px" }}>
-      {/* Table information dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => setDialogOpen(open)}>
-        <DialogContent className="sm:max-w-md">
-          {selectedTable && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-xl">Table {selectedTable}</DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-2 items-center">
-                  <span className="font-medium">Capacity:</span>
-                  <span>{tableCapacities[selectedTable]} guests</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 items-center">
-                  <span className="font-medium">Occupancy:</span>
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-full bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${Math.min(getTableOccupancy(selectedTable), 100)}%`,
-                          backgroundColor: getTableBorderColor(selectedTable),
-                        }}
-                      />
-                    </div>
-                    <span>{Math.round(getTableOccupancy(selectedTable))}%</span>
-                  </div>
-                </div>
-
-                <div className="mt-2">
-                  <h4 className="font-medium mb-2">Assigned Guests:</h4>
-                  {isLoading ? (
-                    <p className="text-gray-500">Loading...</p>
-                  ) : error ? (
-                    <p className="text-red-500">{error}</p>
-                  ) : tableGuests.length > 0 ? (
-                    <div ref={tableGuestsRef} className="max-h-60 overflow-y-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-2 py-1 text-left">Cabin</th>
-                            <th className="px-2 py-1 text-left">Guest</th>
-                            <th className="px-2 py-1 text-left">Nationality</th>
-                            <th className="px-2 py-1 text-left w-8"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y">{renderTableAssignments()}</tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="text-gray-500">No guests assigned to this table.</p>
-                  )}
-                </div>
-              </div>
-            </>
+    <div className="space-y-4">
+      {statusMessage && (
+        <Alert
+          className={`${
+            statusMessage.type === "success" ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+          }`}
+        >
+          {statusMessage.type === "success" ? (
+            <CheckCircle className="h-4 w-4 text-green-600" />
+          ) : (
+            <AlertCircle className="h-4 w-4 text-red-600" />
           )}
+          <AlertDescription className={statusMessage.type === "success" ? "text-green-700" : "text-red-700"}>
+            {statusMessage.message}
+          </AlertDescription>
+          <Button variant="ghost" size="sm" className="ml-auto h-8 w-8 p-0" onClick={() => setStatusMessage(null)}>
+            <X className="h-4 w-4" />
+          </Button>
+        </Alert>
+      )}
+
+      <div className="border rounded-lg overflow-hidden">
+        <svg width="100%" height="580" viewBox="0 0 650 580" className="bg-white">
+          <rect x="0" y="0" width="650" height="580" fill="white" />
+          {renderTables()}
+          {renderOccupancyLegend()}
+        </svg>
+      </div>
+
+      {/* Table Guests Dialog */}
+      <Dialog open={showTableDialog} onOpenChange={setShowTableDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Table {selectedTable} Guests</span>
+              <span className="text-sm font-normal text-gray-500">
+                {tableGuests.length}/{tableCapacities[selectedTable] || 0} seats
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-4">
+            {tableGuests.length > 0 ? (
+              <div className="space-y-2">
+                {tableGuests.map((guest) => (
+                  <div key={guest.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-blue-600" />
+                      <div>
+                        <div className="font-medium">{guest.guest_name}</div>
+                        <div className="text-sm text-gray-500">Cabin {guest.cabin_nr}</div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={() => removeGuestFromTable(guest.id, guest.guest_name)}
+                      disabled={removingGuest}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Users className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                <p>No guests assigned to this table</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTableDialog(false)}>
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Floor plan */}
-      <svg width="100%" height="100%" viewBox="0 0 650 550" className="border rounded">
-        {/* Background */}
-        <rect x="0" y="0" width="650" height="550" fill="white" />
-
-        {/* Tables */}
-        {renderTables()}
-
-        {/* Table labels */}
-        {renderTableLabels()}
-
-        {/* Occupancy legend - blue gradient */}
-        <g transform="translate(50, 480)">
-          <text x="0" y="0" fontWeight="medium" fontSize="12">
-            Occupancy:
-          </text>
-
-          <circle cx="10" cy="20" r="6" fill="rgb(239, 246, 255)" stroke="rgb(191, 219, 254)" strokeWidth="2" />
-          <text x="25" y="24" fontSize="12">
-            Empty
-          </text>
-
-          <circle cx="10" cy="45" r="6" fill="rgb(219, 234, 254)" stroke="rgb(147, 197, 253)" strokeWidth="2" />
-          <text x="25" y="49" fontSize="12">
-            1-25%
-          </text>
-
-          <circle cx="10" cy="70" r="6" fill="rgb(191, 219, 254)" stroke="rgb(96, 165, 250)" strokeWidth="2" />
-          <text x="25" y="74" fontSize="12">
-            26-50%
-          </text>
-
-          <circle cx="80" cy="20" r="6" fill="rgb(147, 197, 253)" stroke="rgb(59, 130, 246)" strokeWidth="2" />
-          <text x="95" y="24" fontSize="12">
-            51-75%
-          </text>
-
-          <circle cx="80" cy="45" r="6" fill="rgb(96, 165, 250)" stroke="rgb(37, 99, 235)" strokeWidth="2" />
-          <text x="95" y="49" fontSize="12">
-            76-99%
-          </text>
-
-          <circle cx="80" cy="70" r="6" fill="rgb(59, 130, 246)" stroke="rgb(29, 78, 216)" strokeWidth="2" />
-          <text x="95" y="74" fontSize="12">
-            100%
-          </text>
-        </g>
-      </svg>
     </div>
   )
 }

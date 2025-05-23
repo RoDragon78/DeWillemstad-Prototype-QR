@@ -16,7 +16,7 @@ import { FloorPlan } from "@/components/floor-plan"
 import { DailyFloorPlan } from "@/components/daily-floor-plan"
 import { GuestList } from "@/components/guest-list"
 import { UnassignedGuests } from "@/components/unassigned-guests"
-import { AlertCircle, CheckCircle, X, LogOut, Users, Calendar, Home } from "lucide-react"
+import { AlertCircle, CheckCircle, X, LogOut, Users, Calendar, Home, Trash2 } from "lucide-react"
 
 // Updated table capacity configuration - added table 15
 const TABLE_CAPACITIES = {
@@ -447,6 +447,39 @@ export default function DashboardPage() {
     }
   }
 
+  // Remove individual guest from table preview
+  const removeGuestFromTablePreview = async (guestId, guestName) => {
+    try {
+      setRemovingGuest(true)
+      storeScrollPosition()
+
+      const { error } = await supabase.from("guest_manifest").update({ table_nr: null }).eq("id", guestId)
+
+      if (error) {
+        console.error("Error removing guest:", error)
+        throw error
+      }
+
+      // Refresh table preview and main data
+      await Promise.all([previewTableGuests(newTableNumber), fetchGuests()])
+
+      restoreScrollPosition()
+
+      setStatusMessage({
+        type: "success",
+        message: `${guestName} has been removed from Table ${newTableNumber}.`,
+      })
+    } catch (error) {
+      console.error("Error removing guest:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to remove guest. Please try again.",
+      })
+    } finally {
+      setRemovingGuest(false)
+    }
+  }
+
   // Update table preview when table number changes
   useEffect(() => {
     previewTableGuests(newTableNumber)
@@ -669,6 +702,14 @@ export default function DashboardPage() {
       // Refresh data to ensure consistency
       fetchGuests()
     }
+  }
+
+  // Get occupancy display for table preview
+  const getTableOccupancy = (tableNumber) => {
+    if (!tableNumber || !TABLE_CAPACITIES[tableNumber]) return ""
+    const capacity = TABLE_CAPACITIES[tableNumber]
+    const currentGuests = tableGuestPreview.length
+    return `${currentGuests}/${capacity} seats`
   }
 
   // Add the return statement at the end of the DashboardPage function, just before the final closing brace
@@ -914,21 +955,39 @@ export default function DashboardPage() {
                           Add Cabin to Table
                         </Button>
 
-                        {/* Table preview */}
+                        {/* Table preview with delete buttons and occupancy */}
                         {showTablePreview && (
                           <div className="p-3 border rounded-md bg-blue-50">
-                            <h4 className="text-sm font-medium mb-2">Current Guests at Table {newTableNumber}:</h4>
+                            <div className="flex justify-between items-center mb-2">
+                              <h4 className="text-sm font-medium">Current Table Guests:</h4>
+                              <span className="text-sm text-gray-600">{getTableOccupancy(newTableNumber)}</span>
+                            </div>
                             {tableGuestPreview.length > 0 ? (
-                              <ul className="text-sm">
+                              <div className="space-y-2">
                                 {tableGuestPreview.map((guest) => (
-                                  <li key={guest.id} className="mb-1">
-                                    {guest.guest_name} (Cabin {guest.cabin_nr})
-                                    {guest.nationality && (
-                                      <span className="text-gray-500 ml-1">({guest.nationality})</span>
-                                    )}
-                                  </li>
+                                  <div
+                                    key={guest.id}
+                                    className="flex items-center justify-between p-2 bg-white rounded border"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <Users className="h-4 w-4 text-blue-600" />
+                                      <div>
+                                        <div className="text-sm font-medium">{guest.guest_name}</div>
+                                        <div className="text-xs text-gray-500">({guest.cabin_nr})</div>
+                                      </div>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      onClick={() => removeGuestFromTablePreview(guest.id, guest.guest_name)}
+                                      disabled={removingGuest}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
                                 ))}
-                              </ul>
+                              </div>
                             ) : (
                               <p className="text-sm">No guests currently assigned to this table.</p>
                             )}

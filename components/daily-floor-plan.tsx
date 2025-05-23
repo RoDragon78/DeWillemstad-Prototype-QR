@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Search, Filter, Printer, Calendar, Users, ChefHat } from "lucide-react"
 
-// Updated table positions to match the new floor plan layout
+// Updated table positions to match the new floor plan layout - moved tables 14, 15, 16 further right
 const TABLE_POSITIONS = {
   // Row 1 - Top row
   1: { x: 50, y: 30, width: 100, height: 80, shape: "rect" },
@@ -35,10 +35,10 @@ const TABLE_POSITIONS = {
   13: { x: 330, y: 330, width: 80, height: 80, shape: "circle" },
   17: { x: 460, y: 330, width: 120, height: 60, shape: "rect" },
 
-  // Row 5 - Bottom row
-  14: { x: 120, y: 430, width: 140, height: 60, shape: "rect" },
-  15: { x: 290, y: 430, width: 120, height: 60, shape: "rect" }, // New table 15
-  16: { x: 440, y: 430, width: 100, height: 80, shape: "rect" },
+  // Row 5 - Bottom row (moved further right)
+  14: { x: 180, y: 430, width: 120, height: 60, shape: "rect" },
+  15: { x: 330, y: 430, width: 120, height: 60, shape: "rect" }, // Fixed to rect for 6 guests
+  16: { x: 480, y: 430, width: 100, height: 80, shape: "rect" },
 }
 
 // Day mapping - updated to use day names instead of numbers
@@ -516,37 +516,37 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
             </CardHeader>
             <CardContent>
               <div className="border rounded-lg overflow-hidden mb-4">
-                <svg width="100%" height="600" viewBox="0 0 650 550" className="bg-white">
-                  <rect x="0" y="0" width="650" height="550" fill="white" />
+                <svg width="100%" height="580" viewBox="0 0 650 580" className="bg-white">
+                  <rect x="0" y="0" width="650" height="580" fill="white" />
                   {renderMealTables()}
 
-                  {/* Updated Legend */}
-                  <g transform="translate(50, 480)">
-                    <text x="0" y="0" fontWeight="medium" fontSize="12">
+                  {/* Updated Legend - smaller and positioned in bottom left */}
+                  <g transform="translate(20, 480)">
+                    <text x="0" y="0" fontWeight="medium" fontSize="11" fill="rgb(75, 85, 99)">
                       Meal Selection Status:
                     </text>
-                    <circle cx="10" cy="20" r="6" fill="rgb(34, 197, 94)" />
-                    <text x="25" y="24" fontSize="12">
+                    <circle cx="8" cy="18" r="5" fill="rgb(34, 197, 94)" />
+                    <text x="18" y="22" fontSize="10" fill="rgb(75, 85, 99)">
                       All meals selected
                     </text>
 
-                    <circle cx="10" cy="40" r="6" fill="rgb(251, 191, 36)" />
-                    <text x="25" y="44" fontSize="12">
+                    <circle cx="8" cy="35" r="5" fill="rgb(251, 191, 36)" />
+                    <text x="18" y="39" fontSize="10" fill="rgb(75, 85, 99)">
                       Most meals selected
                     </text>
 
-                    <circle cx="10" cy="60" r="6" fill="rgb(249, 115, 22)" />
-                    <text x="25" y="64" fontSize="12">
+                    <circle cx="8" cy="52" r="5" fill="rgb(249, 115, 22)" />
+                    <text x="18" y="56" fontSize="10" fill="rgb(75, 85, 99)">
                       Some meals selected
                     </text>
 
-                    <circle cx="10" cy="80" r="6" fill="rgb(239, 68, 68)" />
-                    <text x="25" y="84" fontSize="12">
+                    <circle cx="8" cy="69" r="5" fill="rgb(239, 68, 68)" />
+                    <text x="18" y="73" fontSize="10" fill="rgb(75, 85, 99)">
                       No meals selected
                     </text>
 
-                    <circle cx="200" cy="20" r="6" fill="rgb(239, 246, 255)" />
-                    <text x="215" y="24" fontSize="12">
+                    <circle cx="150" cy="18" r="5" fill="rgb(239, 246, 255)" />
+                    <text x="160" y="22" fontSize="10" fill="rgb(75, 85, 99)">
                       No guests assigned
                     </text>
                   </g>
