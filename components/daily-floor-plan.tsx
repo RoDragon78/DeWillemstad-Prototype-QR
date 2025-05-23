@@ -68,140 +68,41 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
   const [sortBy, setSortBy] = useState("table")
   const [mealData, setMealData] = useState([])
   const [kitchenSummary, setKitchenSummary] = useState({})
-  const [mealSelections, setMealSelections] = useState({})
-  const [menuItems, setMenuItems] = useState([])
   const [tableData, setTableData] = useState({})
   const supabase = createClientComponentClient()
 
-  // Enhanced meal categorization function
-  const getMealCategory = useCallback((mealId, menuItems) => {
-    const meal = menuItems.find((item) => item.id === mealId)
-    if (!meal) {
-      console.log("No meal found for ID:", mealId)
-      return "noSelection"
-    }
-
-    console.log("Categorizing meal:", meal.name_en, "Type:", meal.meal_type)
-
-    // Check meal_type first
-    const mealType = meal.meal_type?.toLowerCase() || ""
-
-    // More comprehensive categorization
-    if (
-      mealType.includes("meat") ||
-      mealType.includes("beef") ||
-      mealType.includes("pork") ||
-      mealType.includes("chicken") ||
-      mealType.includes("lamb") ||
-      mealType.includes("duck") ||
-      mealType.includes("turkey")
-    ) {
-      return "meat"
-    }
-
-    if (
-      mealType.includes("fish") ||
-      mealType.includes("salmon") ||
-      mealType.includes("seafood") ||
-      mealType.includes("cod") ||
-      mealType.includes("tuna") ||
-      mealType.includes("sole") ||
-      mealType.includes("halibut") ||
-      mealType.includes("sea bass") ||
-      mealType.includes("colin") // Colin Blanc Fillet
-    ) {
-      return "fish"
-    }
-
-    if (
-      mealType.includes("vegetarian") ||
-      mealType.includes("vegan") ||
-      mealType.includes("veggie") ||
-      mealType.includes("plant")
-    ) {
-      return "vegetarian"
-    }
-
-    // Fallback to meal name analysis
-    const mealName = meal.name_en?.toLowerCase() || ""
-
-    if (
-      mealName.includes("beef") ||
-      mealName.includes("chicken") ||
-      mealName.includes("pork") ||
-      mealName.includes("lamb") ||
-      mealName.includes("meat") ||
-      mealName.includes("duck") ||
-      mealName.includes("turkey")
-    ) {
-      return "meat"
-    }
-
-    if (
-      mealName.includes("fish") ||
-      mealName.includes("salmon") ||
-      mealName.includes("seafood") ||
-      mealName.includes("cod") ||
-      mealName.includes("tuna") ||
-      mealName.includes("sole") ||
-      mealName.includes("halibut") ||
-      mealName.includes("colin") || // Colin Blanc Fillet
-      mealName.includes("fillet")
-    ) {
-      return "fish"
-    }
-
-    if (
-      mealName.includes("vegetarian") ||
-      mealName.includes("vegan") ||
-      mealName.includes("veggie") ||
-      mealName.includes("plant")
-    ) {
-      return "vegetarian"
-    }
-
-    return "other"
-  }, [])
-
-  // Enhanced data fetching with proper meal categorization
+  // Simplified data fetching that uses meal_category directly
   const fetchMealData = useCallback(async () => {
     try {
       const dayNumber = DAY_MAPPING[selectedDay]
+      console.log(`Fetching meal data for day ${dayNumber}`)
 
-      // Fetch meal selections for this day
+      // Fetch meal selections for this day with meal_category
       const { data: selections, error: selectionsError } = await supabase
         .from("meal_selections")
-        .select("*")
+        .select("guest_id, meal_id, meal_name, meal_category, day")
         .eq("day", dayNumber)
 
       if (selectionsError) {
         console.error("Error fetching meal selections:", selectionsError)
+        return
       }
 
-      // Fetch menu items for this day
-      const { data: menuData, error: menuError } = await supabase.from("menu_items").select("*").eq("day", dayNumber)
-
-      if (menuError) {
-        console.error("Error fetching menu items:", menuError)
-      }
-
-      setMenuItems(menuData || [])
+      console.log(`Found ${selections?.length || 0} meal selections for day ${dayNumber}`)
 
       // Process meal selections by guest
       const guestMealSelections = {}
       if (selections) {
         selections.forEach((selection) => {
-          const category = getMealCategory(selection.meal_id, menuData || [])
+          // Normalize category to lowercase for consistency
+          const category = selection.meal_category?.toLowerCase() || "noSelection"
           guestMealSelections[selection.guest_id] = {
             meal_id: selection.meal_id,
             meal_name: selection.meal_name,
-            meal_category: selection.meal_category,
             category: category,
           }
         })
       }
-
-      setMealSelections(guestMealSelections)
 
       // Process table data
       const tables = {}
@@ -212,7 +113,6 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
         vegetarian: 0,
         other: 0,
         noSelection: 0,
-        mealBreakdown: {},
       }
 
       // Group guests by table
@@ -238,6 +138,8 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
 
         // Get meal selection for this guest
         const mealSelection = guestMealSelections[guest.id]
+
+        // Default to noSelection if no meal selection found
         const category = mealSelection ? mealSelection.category : "noSelection"
 
         // Update counts
@@ -253,15 +155,10 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
 
         // Update overall summary
         summary[category]++
-
-        // Update meal breakdown
-        if (mealSelection?.meal_name) {
-          summary.mealBreakdown[mealSelection.meal_name] = (summary.mealBreakdown[mealSelection.meal_name] || 0) + 1
-        }
       })
 
-      console.log("Kitchen Summary:", summary) // Debug log
-      console.log("Table Data:", tables) // Debug log
+      console.log("Kitchen Summary:", summary)
+      console.log("Table Data:", tables)
 
       setTableData(tables)
       setKitchenSummary(summary)
@@ -281,7 +178,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
     } catch (error) {
       console.error("Error fetching meal data:", error)
     }
-  }, [selectedDay, guests, supabase, getMealCategory])
+  }, [selectedDay, guests, supabase])
 
   // Set up real-time subscriptions
   useEffect(() => {
@@ -577,21 +474,6 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
                   <p className="text-2xl font-bold">{kitchenSummary.noSelection || 0}</p>
                 </div>
               </div>
-
-              {/* Detailed meal breakdown */}
-              {Object.keys(kitchenSummary.mealBreakdown || {}).length > 0 && (
-                <div>
-                  <h4 className="font-medium mb-2">Detailed Meal Breakdown</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
-                    {Object.entries(kitchenSummary.mealBreakdown || {}).map(([meal, count]) => (
-                      <div key={meal} className="flex justify-between bg-gray-50 p-2 rounded">
-                        <span className="truncate">{meal}</span>
-                        <Badge variant="outline">{count}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </CardContent>
           </Card>
 
@@ -719,7 +601,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
                   <tbody className="divide-y">
                     {getFilteredAndSortedGuests().map((guest) => {
                       const hasSelection = guest.meal_selection !== null
-                      const mealCategory = guest.meal_selection?.category || "No Selection"
+                      const mealCategory = guest.meal_category || "noSelection"
 
                       return (
                         <tr key={guest.id} className={hasSelection ? "bg-green-50" : "bg-red-50"}>
@@ -728,7 +610,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
                           <td className="px-3 py-2">{guest.guest_name}</td>
                           <td className="px-3 py-2">
                             <Badge
-                              variant={mealCategory === "No Selection" ? "destructive" : "default"}
+                              variant={mealCategory === "noSelection" ? "destructive" : "default"}
                               className={
                                 mealCategory === "meat"
                                   ? "bg-red-100 text-red-800"
