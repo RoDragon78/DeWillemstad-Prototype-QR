@@ -81,16 +81,20 @@ export default function DashboardPage() {
   const [cabinToReassign, setCabinToReassign] = useState(null)
   const [currentTableNumber, setCurrentTableNumber] = useState(null)
 
+  // Add state for dialog scroll positions
+  const [dialogScrollPositions, setDialogScrollPositions] = useState({})
+
   // Add a more robust storeScrollPosition function
   const storeScrollPosition = () => {
     if (typeof window !== "undefined") {
       scrollPositionRef.current = window.scrollY
-      // Also store the position of any open dialogs or scrollable containers
+
+      // Store dialog scroll positions
       if (tableGuestsRef.current) {
-        lastActionRef.current = {
-          type: "table_guests",
-          scrollTop: tableGuestsRef.current.scrollTop,
-        }
+        setDialogScrollPositions((prev) => ({
+          ...prev,
+          tableGuests: tableGuestsRef.current.scrollTop,
+        }))
       }
     }
   }
@@ -101,9 +105,13 @@ export default function DashboardPage() {
       requestAnimationFrame(() => {
         window.scrollTo(0, scrollPositionRef.current)
 
-        // Restore any specific container scroll positions
-        if (lastActionRef.current && lastActionRef.current.type === "table_guests" && tableGuestsRef.current) {
-          tableGuestsRef.current.scrollTop = lastActionRef.current.scrollTop
+        // Restore dialog scroll positions
+        if (tableGuestsRef.current && dialogScrollPositions.tableGuests !== undefined) {
+          setTimeout(() => {
+            if (tableGuestsRef.current) {
+              tableGuestsRef.current.scrollTop = dialogScrollPositions.tableGuests
+            }
+          }, 100)
         }
       })
     }
@@ -146,9 +154,10 @@ export default function DashboardPage() {
     }
   }, [])
 
-  // Add function to search for cabins
+  // Add function to search for cabins - improved with better cleanup
   const searchCabins = async (term) => {
-    if (!term || term.length < 1) {
+    // Clear suggestions if term is too short
+    if (!term || term.length < 2) {
       setCabinSuggestions([])
       return
     }
@@ -197,15 +206,17 @@ export default function DashboardPage() {
       setCabinSuggestions(suggestions)
     } catch (error) {
       console.error("Error searching cabins:", error)
+      setCabinSuggestions([])
     }
   }
 
-  // Modify the handleCabinSelect function
+  // Modify the handleCabinSelect function - improved with proper cleanup
   const handleCabinSelect = async (cabin) => {
     storeScrollPosition()
     setNewCabinNumber(cabin.cabin_nr)
     setSelectedCabinGuests(cabin.guests)
     setCabinSearchOpen(false)
+    setCabinSuggestions([]) // Clear suggestions after selection
 
     // If table number is already selected, automatically add the cabin to the table
     if (newTableNumber) {
@@ -224,7 +235,7 @@ export default function DashboardPage() {
     }
   }
 
-  // Handle quick assign from search results
+  // Handle quick assign from search results - improved with proper cleanup
   const handleQuickAssign = (cabin) => {
     storeScrollPosition()
     if (!newTableNumber) {
@@ -234,6 +245,10 @@ export default function DashboardPage() {
       })
       return
     }
+
+    // Close the dropdown and clear suggestions
+    setCabinSearchOpen(false)
+    setCabinSuggestions([])
 
     // Check if cabin is already assigned to a different table
     if (cabin.table_nr && cabin.table_nr !== Number.parseInt(newTableNumber)) {
@@ -682,7 +697,7 @@ export default function DashboardPage() {
     }
   }
 
-  // Add a cabin to a table manually - simplified logic
+  // Add a cabin to a table manually - improved with proper cleanup
   const addCabinToTable = async (cabinNumberToAdd, nationalityToAdd) => {
     try {
       storeScrollPosition()
@@ -764,9 +779,11 @@ export default function DashboardPage() {
       await fetchGuests()
       restoreScrollPosition()
 
-      // Clear the form
+      // Clear the form and close dropdown
       setNewCabinNumber("")
       setSelectedCabinGuests([])
+      setCabinSearchOpen(false)
+      setCabinSuggestions([])
 
       setStatusMessage({
         type: "success",
@@ -1081,7 +1098,15 @@ export default function DashboardPage() {
                 <div>
                   <Label htmlFor="cabin-number">Cabin Number</Label>
                   <div className="relative mt-1">
-                    <Popover open={cabinSearchOpen} onOpenChange={setCabinSearchOpen}>
+                    <Popover
+                      open={cabinSearchOpen}
+                      onOpenChange={(open) => {
+                        setCabinSearchOpen(open)
+                        if (!open) {
+                          setCabinSuggestions([]) // Clear suggestions when closing
+                        }
+                      }}
+                    >
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
@@ -1095,9 +1120,22 @@ export default function DashboardPage() {
                       </PopoverTrigger>
                       <PopoverContent className="w-full p-0">
                         <Command>
-                          <CommandInput placeholder="Search cabins..." onValueChange={(value) => searchCabins(value)} />
+                          <CommandInput
+                            placeholder="Search cabins..."
+                            onValueChange={(value) => {
+                              if (value.length === 0) {
+                                setCabinSuggestions([]) // Clear suggestions when input is empty
+                              } else {
+                                searchCabins(value)
+                              }
+                            }}
+                          />
                           <CommandList>
-                            <CommandEmpty>No cabins found.</CommandEmpty>
+                            <CommandEmpty>
+                              {cabinSuggestions.length === 0
+                                ? "Type at least 2 characters to search..."
+                                : "No cabins found."}
+                            </CommandEmpty>
                             <CommandGroup>
                               {cabinSuggestions.map((cabin) => (
                                 <CommandItem
