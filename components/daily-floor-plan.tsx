@@ -32,7 +32,7 @@ const TABLE_POSITIONS = {
   // Row 4 (increased sizes)
   4: { x: 40, y: 390, width: 120, height: 100, shape: "rect" },
   6: { x: 190, y: 390, width: 140, height: 80, shape: "rect" },
-  13: { x: 320, y: 390, width: 100, height: 100, shape: "circle" },
+  13: { x: 330, y: 390, width: 100, height: 100, shape: "circle" },
   17: { x: 450, y: 390, width: 140, height: 80, shape: "rect" },
 
   // Row 5 - Bottom row (increased sizes and repositioned)
@@ -76,38 +76,87 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
   // Enhanced meal categorization function
   const getMealCategory = useCallback((mealId, menuItems) => {
     const meal = menuItems.find((item) => item.id === mealId)
-    if (!meal) return "noSelection"
+    if (!meal) {
+      console.log("No meal found for ID:", mealId)
+      return "noSelection"
+    }
+
+    console.log("Categorizing meal:", meal.name_en, "Type:", meal.meal_type)
 
     // Check meal_type first
     const mealType = meal.meal_type?.toLowerCase() || ""
 
+    // More comprehensive categorization
     if (
       mealType.includes("meat") ||
       mealType.includes("beef") ||
       mealType.includes("pork") ||
       mealType.includes("chicken") ||
-      mealType.includes("lamb")
+      mealType.includes("lamb") ||
+      mealType.includes("duck") ||
+      mealType.includes("turkey")
     ) {
       return "meat"
-    } else if (mealType.includes("fish") || mealType.includes("salmon") || mealType.includes("seafood")) {
+    }
+
+    if (
+      mealType.includes("fish") ||
+      mealType.includes("salmon") ||
+      mealType.includes("seafood") ||
+      mealType.includes("cod") ||
+      mealType.includes("tuna") ||
+      mealType.includes("sole") ||
+      mealType.includes("halibut") ||
+      mealType.includes("sea bass") ||
+      mealType.includes("colin") // Colin Blanc Fillet
+    ) {
       return "fish"
-    } else if (mealType.includes("vegetarian") || mealType.includes("vegan") || mealType.includes("veggie")) {
+    }
+
+    if (
+      mealType.includes("vegetarian") ||
+      mealType.includes("vegan") ||
+      mealType.includes("veggie") ||
+      mealType.includes("plant")
+    ) {
       return "vegetarian"
     }
 
     // Fallback to meal name analysis
     const mealName = meal.name_en?.toLowerCase() || ""
+
     if (
       mealName.includes("beef") ||
       mealName.includes("chicken") ||
       mealName.includes("pork") ||
       mealName.includes("lamb") ||
-      mealName.includes("meat")
+      mealName.includes("meat") ||
+      mealName.includes("duck") ||
+      mealName.includes("turkey")
     ) {
       return "meat"
-    } else if (mealName.includes("fish") || mealName.includes("salmon") || mealName.includes("seafood")) {
+    }
+
+    if (
+      mealName.includes("fish") ||
+      mealName.includes("salmon") ||
+      mealName.includes("seafood") ||
+      mealName.includes("cod") ||
+      mealName.includes("tuna") ||
+      mealName.includes("sole") ||
+      mealName.includes("halibut") ||
+      mealName.includes("colin") || // Colin Blanc Fillet
+      mealName.includes("fillet")
+    ) {
       return "fish"
-    } else if (mealName.includes("vegetarian") || mealName.includes("vegan") || mealName.includes("veggie")) {
+    }
+
+    if (
+      mealName.includes("vegetarian") ||
+      mealName.includes("vegan") ||
+      mealName.includes("veggie") ||
+      mealName.includes("plant")
+    ) {
       return "vegetarian"
     }
 
@@ -142,11 +191,12 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
       const guestMealSelections = {}
       if (selections) {
         selections.forEach((selection) => {
+          const category = getMealCategory(selection.meal_id, menuData || [])
           guestMealSelections[selection.guest_id] = {
             meal_id: selection.meal_id,
             meal_name: selection.meal_name,
             meal_category: selection.meal_category,
-            category: getMealCategory(selection.meal_id, menuData || []),
+            category: category,
           }
         })
       }
@@ -188,7 +238,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
 
         // Get meal selection for this guest
         const mealSelection = guestMealSelections[guest.id]
-        const category = mealSelection?.category || "noSelection"
+        const category = mealSelection ? mealSelection.category : "noSelection"
 
         // Update counts
         tables[guest.table_nr].cabins[cabinNr].guests.push({
@@ -209,6 +259,9 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
           summary.mealBreakdown[mealSelection.meal_name] = (summary.mealBreakdown[mealSelection.meal_name] || 0) + 1
         }
       })
+
+      console.log("Kitchen Summary:", summary) // Debug log
+      console.log("Table Data:", tables) // Debug log
 
       setTableData(tables)
       setKitchenSummary(summary)
