@@ -25,8 +25,6 @@ import {
 
 import { UnassignedGuests } from "@/components/unassigned-guests"
 import { GuestList } from "@/components/guest-list"
-import { DndProvider } from "react-dnd"
-import { HTML5Backend } from "react-dnd-html5-backend"
 
 // Table capacity configuration based on the floor plan - removed tables 5 and 15
 const TABLE_CAPACITIES = {
@@ -296,10 +294,6 @@ export default function DashboardPage() {
       }
 
       console.log("Fetched guests:", data)
-      setGuests(data || [])
-      processTableAssignments(data || [])
-
-      // If we have a  data)
       setGuests(data || [])
       processTableAssignments(data || [])
 
@@ -939,214 +933,196 @@ export default function DashboardPage() {
   }
 
   return (
-    <DndProvider backend={HTML5Backend}>
-      <div className="min-h-screen bg-gray-50">
-        <div className="p-4 bg-white shadow-sm">
-          <div className="max-w-7xl mx-auto flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-              <p className="text-gray-600">Table Assignment System</p>
+    <div className="min-h-screen bg-gray-50">
+      <div className="p-4 bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+            <p className="text-gray-600">Table Assignment System</p>
+          </div>
+          <Button onClick={handleSignOut} variant="outline">
+            Sign Out
+          </Button>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto p-4 md:p-6">
+        {statusMessage && (
+          <Alert
+            className={`mb-6 ${
+              statusMessage.type === "success"
+                ? "bg-green-50 border-green-200 text-green-800"
+                : statusMessage.type === "error"
+                  ? "bg-red-50 border-red-200 text-red-800"
+                  : "bg-blue-50 border-blue-200 text-blue-800"
+            }`}
+          >
+            <AlertDescription>{statusMessage.message}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+          <h2 className="text-lg font-semibold mb-3">Control Panel</h2>
+
+          <div className="grid grid-cols-1 gap-3 mb-4">
+            <div className="flex gap-2">
+              <Button
+                onClick={assignTablesAutomatically}
+                disabled={assigningTables}
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+              >
+                {assigningTables ? (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  "Assign Tables Automatically"
+                )}
+              </Button>
+
+              <Button onClick={clearTableAssignments} variant="outline" disabled={loading} className="flex-1">
+                Clear All Assignments
+              </Button>
             </div>
-            <Button onClick={handleSignOut} variant="outline">
-              Sign Out
-            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+              <p className="text-sm text-blue-600 font-medium">Total Guests</p>
+              <p className="text-2xl font-bold">{totalGuests}</p>
+            </div>
+            <div className="bg-green-50 p-3 rounded-lg border border-green-100">
+              <p className="text-sm text-green-600 font-medium">Assigned Guests</p>
+              <p className="text-2xl font-bold">{assignedGuests}</p>
+            </div>
+            <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
+              <p className="text-sm text-amber-600 font-medium">Tables Used</p>
+              <p className="text-2xl font-bold">{tablesUsed}</p>
+            </div>
+            <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
+              <p className="text-sm text-orange-600 font-medium">Unassigned Guests</p>
+              <p className="text-2xl font-bold">{unassignedGuests}</p>
+            </div>
+            <div className="bg-red-50 p-3 rounded-lg border border-red-100">
+              <p className="text-sm text-red-600 font-medium">Unassigned Tables</p>
+              <p className="text-2xl font-bold">{Object.keys(TABLE_CAPACITIES).length - tablesUsed}</p>
+            </div>
+            <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
+              <p className="text-sm text-purple-600 font-medium">Booking Groups</p>
+              <p className="text-2xl font-bold">{bookingGroups}</p>
+            </div>
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto p-4 md:p-6">
-          {statusMessage && (
-            <Alert
-              className={`mb-6 ${
-                statusMessage.type === "success"
-                  ? "bg-green-50 border-green-200 text-green-800"
-                  : statusMessage.type === "error"
-                    ? "bg-red-50 border-red-200 text-red-800"
-                    : "bg-blue-50 border-blue-200 text-blue-800"
-              }`}
-            >
-              <AlertDescription>{statusMessage.message}</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-            <h2 className="text-lg font-semibold mb-3">Control Panel</h2>
-
-            <div className="grid grid-cols-1 gap-3 mb-4">
-              <div className="flex gap-2">
-                <Button
-                  onClick={assignTablesAutomatically}
-                  disabled={assigningTables}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700"
-                >
-                  {assigningTables ? (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      Assigning...
-                    </>
-                  ) : (
-                    "Assign Tables Automatically"
-                  )}
-                </Button>
-
-                <Button onClick={clearTableAssignments} variant="outline" disabled={loading} className="flex-1">
-                  Clear All Assignments
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-              <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                <p className="text-sm text-blue-600 font-medium">Total Guests</p>
-                <p className="text-2xl font-bold">{totalGuests}</p>
-              </div>
-              <div className="bg-green-50 p-3 rounded-lg border border-green-100">
-                <p className="text-sm text-green-600 font-medium">Assigned Guests</p>
-                <p className="text-2xl font-bold">{assignedGuests}</p>
-              </div>
-              <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
-                <p className="text-sm text-amber-600 font-medium">Tables Used</p>
-                <p className="text-2xl font-bold">{tablesUsed}</p>
-              </div>
-              <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
-                <p className="text-sm text-orange-600 font-medium">Unassigned Guests</p>
-                <p className="text-2xl font-bold">{unassignedGuests}</p>
-              </div>
-              <div className="bg-red-50 p-3 rounded-lg border border-red-100">
-                <p className="text-sm text-red-600 font-medium">Unassigned Tables</p>
-                <p className="text-2xl font-bold">{Object.keys(TABLE_CAPACITIES).length - tablesUsed}</p>
-              </div>
-              <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
-                <p className="text-sm text-purple-600 font-medium">Booking Groups</p>
-                <p className="text-2xl font-bold">{bookingGroups}</p>
+        {/* Removed Tabs component and Table Assignments tab - only show Floor Plan */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+              <h2 className="text-lg font-semibold mb-3">Floor Plan</h2>
+              <div className="border rounded-lg overflow-hidden">
+                <FloorPlan
+                  tableCapacities={TABLE_CAPACITIES}
+                  tableAssignments={tableAssignments}
+                  guests={guests}
+                  onTableUpdate={fetchGuests}
+                />
               </div>
             </div>
           </div>
 
-          {/* Removed Tabs component and Table Assignments tab - only show Floor Plan */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-                <h2 className="text-lg font-semibold mb-3">Floor Plan</h2>
-                <div className="border rounded-lg overflow-hidden">
-                  <FloorPlan
-                    tableCapacities={TABLE_CAPACITIES}
-                    tableAssignments={tableAssignments}
-                    guests={guests}
-                    onTableUpdate={fetchGuests}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+              <h2 className="text-lg font-semibold mb-3">Add Cabin to Table</h2>
+
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="table-number">Table Number</Label>
+                  <Input
+                    id="table-number"
+                    placeholder="e.g. 20"
+                    value={newTableNumber}
+                    onChange={(e) => setNewTableNumber(e.target.value)}
                   />
-                </div>
-              </div>
-            </div>
 
-            <div className="lg:col-span-1">
-              <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-                <h2 className="text-lg font-semibold mb-3">Add Cabin to Table</h2>
-
-                <div className="space-y-3">
-                  <div>
-                    <Label htmlFor="table-number">Table Number</Label>
-                    <Input
-                      id="table-number"
-                      placeholder="e.g. 20"
-                      value={newTableNumber}
-                      onChange={(e) => setNewTableNumber(e.target.value)}
-                    />
-
-                    {/* Table guest preview */}
-                    {showTablePreview && (
-                      <div className="mt-2 p-3 bg-blue-50 rounded-md">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-sm font-medium">Current Table Guests:</h4>
-                          <Badge variant="outline" className="bg-blue-100">
-                            {tableGuestPreview.length}/{TABLE_CAPACITIES[Number.parseInt(newTableNumber, 10)] || 0}{" "}
-                            seats
-                          </Badge>
-                        </div>
-                        <div ref={tableGuestsRef} className="max-h-24 overflow-y-auto">
-                          <ul className="space-y-1">
-                            {tableGuestPreview.map((guest) => (
-                              <li key={guest.id} className="text-sm flex items-center justify-between">
-                                <div className="flex items-center">
-                                  <User className="h-3 w-3 mr-1 text-blue-400" />
-                                  {guest.guest_name || "Unknown"} ({guest.cabin_nr})
-                                </div>
-                                <button
-                                  onClick={() => removeGuestFromTable(guest.id)}
-                                  disabled={removingGuest}
-                                  className="text-red-500 hover:text-red-700 p-1"
-                                  title="Remove guest from table"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                  {/* Table guest preview */}
+                  {showTablePreview && (
+                    <div className="mt-2 p-3 bg-blue-50 rounded-md">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium">Current Table Guests:</h4>
+                        <Badge variant="outline" className="bg-blue-100">
+                          {tableGuestPreview.length}/{TABLE_CAPACITIES[Number.parseInt(newTableNumber, 10)] || 0} seats
+                        </Badge>
                       </div>
-                    )}
-                  </div>
+                      <div ref={tableGuestsRef} className="max-h-24 overflow-y-auto">
+                        <ul className="space-y-1">
+                          {tableGuestPreview.map((guest) => (
+                            <li key={guest.id} className="text-sm flex items-center justify-between">
+                              <div className="flex items-center">
+                                <User className="h-3 w-3 mr-1 text-blue-400" />
+                                {guest.guest_name || "Unknown"} ({guest.cabin_nr})
+                              </div>
+                              <button
+                                onClick={() => removeGuestFromTable(guest.id)}
+                                disabled={removingGuest}
+                                className="text-red-500 hover:text-red-700 p-1"
+                                title="Remove guest from table"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
-                  <div>
-                    <Label htmlFor="cabin-number">Cabin Number</Label>
-                    <div className="relative mt-1">
-                      <Popover open={cabinSearchOpen} onOpenChange={setCabinSearchOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={cabinSearchOpen}
-                            className="w-full justify-between"
-                          >
-                            {newCabinNumber || "Select cabin..."}
-                            <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-full p-0">
-                          <Command>
-                            <CommandInput
-                              placeholder="Search cabins..."
-                              onValueChange={(value) => searchCabins(value)}
-                            />
-                            <CommandList>
-                              <CommandEmpty>No cabins found.</CommandEmpty>
-                              <CommandGroup>
-                                {cabinSuggestions.map((cabin) => (
-                                  <CommandItem
-                                    key={cabin.cabin_nr}
-                                    value={cabin.cabin_nr}
-                                    onSelect={() => handleCabinSelect(cabin)}
-                                    className="flex justify-between items-center cursor-pointer hover:bg-blue-50 active:bg-blue-100 transition-colors p-2"
-                                  >
-                                    <div className="flex items-center">
-                                      <Check
-                                        className={`mr-2 h-4 w-4 ${
-                                          newCabinNumber === cabin.cabin_nr ? "opacity-100 text-blue-600" : "opacity-0"
-                                        }`}
-                                      />
-                                      <span className="text-sm font-medium">
-                                        {cabin.cabin_nr} - {cabin.guests.length}{" "}
-                                        {cabin.guests.length === 1 ? "guest" : "guests"}
-                                      </span>
-                                    </div>
+                <div>
+                  <Label htmlFor="cabin-number">Cabin Number</Label>
+                  <div className="relative mt-1">
+                    <Popover open={cabinSearchOpen} onOpenChange={setCabinSearchOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={cabinSearchOpen}
+                          className="w-full justify-between"
+                        >
+                          {newCabinNumber || "Select cabin..."}
+                          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-full p-0">
+                        <Command>
+                          <CommandInput placeholder="Search cabins..." onValueChange={(value) => searchCabins(value)} />
+                          <CommandList>
+                            <CommandEmpty>No cabins found.</CommandEmpty>
+                            <CommandGroup>
+                              {cabinSuggestions.map((cabin) => (
+                                <CommandItem
+                                  key={cabin.cabin_nr}
+                                  value={cabin.cabin_nr}
+                                  onSelect={() => handleCabinSelect(cabin)}
+                                  className="flex justify-between items-center cursor-pointer hover:bg-blue-50 active:bg-blue-100 transition-colors p-2"
+                                >
+                                  <div className="flex items-center">
+                                    <Check
+                                      className={`mr-2 h-4 w-4 ${
+                                        newCabinNumber === cabin.cabin_nr ? "opacity-100 text-blue-600" : "opacity-0"
+                                      }`}
+                                    />
+                                    <span className="text-sm font-medium">
+                                      {cabin.cabin_nr} - {cabin.guests.length}{" "}
+                                      {cabin.guests.length === 1 ? "guest" : "guests"}
+                                    </span>
+                                  </div>
 
-                                    {cabin.table_nr ? (
-                                      <div className="flex items-center gap-2">
-                                        <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">
-                                          Table {cabin.table_nr}
-                                        </Badge>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="h-6 px-2 text-xs hover:bg-blue-100 hover:text-blue-700"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            handleQuickAssign(cabin)
-                                          }}
-                                        >
-                                          Reassign
-                                        </Button>
-                                      </div>
-                                    ) : (
+                                  {cabin.table_nr ? (
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">
+                                        Table {cabin.table_nr}
+                                      </Badge>
                                       <Button
                                         size="sm"
                                         variant="ghost"
@@ -1156,85 +1132,95 @@ export default function DashboardPage() {
                                           handleQuickAssign(cabin)
                                         }}
                                       >
-                                        Assign
+                                        Reassign
                                       </Button>
-                                    )}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-6 px-2 text-xs hover:bg-blue-100 hover:text-blue-700"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleQuickAssign(cabin)
+                                      }}
+                                    >
+                                      Assign
+                                    </Button>
+                                  )}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
-
-                  {selectedCabinGuests.length > 0 && (
-                    <div className="mt-2 p-3 bg-gray-50 rounded-md">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-medium">Guest Names:</h4>
-                        <Badge variant="outline" className="bg-gray-100">
-                          <Users className="h-3 w-3 mr-1" />
-                          {selectedCabinGuests.length}
-                        </Badge>
-                      </div>
-                      <ul className="space-y-1 max-h-24 overflow-y-auto">
-                        {selectedCabinGuests.map((guest) => (
-                          <li key={guest.id} className="text-sm flex items-center">
-                            <User className="h-3 w-3 mr-1 text-gray-400" />
-                            {guest.guest_name || "Unknown"}
-                            {guest.nationality && <span className="text-gray-500 ml-1">({guest.nationality})</span>}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Removed the Nationality (Optional) field as requested */}
-
-                  <Button
-                    onClick={() => addCabinToTable()}
-                    className="w-full bg-blue-600 hover:bg-blue-700"
-                    disabled={!newTableNumber || !newCabinNumber}
-                  >
-                    Add Cabin to Table
-                  </Button>
-
-                  <UnassignedGuests currentTableNumber={newTableNumber} onAssignGuest={assignIndividualGuest} />
                 </div>
+
+                {selectedCabinGuests.length > 0 && (
+                  <div className="mt-2 p-3 bg-gray-50 rounded-md">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-medium">Guest Names:</h4>
+                      <Badge variant="outline" className="bg-gray-100">
+                        <Users className="h-3 w-3 mr-1" />
+                        {selectedCabinGuests.length}
+                      </Badge>
+                    </div>
+                    <ul className="space-y-1 max-h-24 overflow-y-auto">
+                      {selectedCabinGuests.map((guest) => (
+                        <li key={guest.id} className="text-sm flex items-center">
+                          <User className="h-3 w-3 mr-1 text-gray-400" />
+                          {guest.guest_name || "Unknown"}
+                          {guest.nationality && <span className="text-gray-500 ml-1">({guest.nationality})</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <Button
+                  onClick={() => addCabinToTable()}
+                  className="w-full bg-blue-600 hover:bg-blue-700"
+                  disabled={!newTableNumber || !newCabinNumber}
+                >
+                  Add Cabin to Table
+                </Button>
+
+                <UnassignedGuests currentTableNumber={newTableNumber} onAssignGuest={assignIndividualGuest} />
               </div>
             </div>
           </div>
-          <GuestList />
         </div>
-
-        {/* Confirmation Dialog for Reassigning Cabin */}
-        <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Reassign Cabin</DialogTitle>
-              <DialogDescription>
-                This cabin is currently assigned to Table {currentTableNumber}. Do you want to reassign it to Table{" "}
-                {newTableNumber}?
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex items-center p-4 bg-amber-50 rounded-md">
-              <AlertTriangle className="h-5 w-5 text-amber-500 mr-2" />
-              <p className="text-sm text-amber-700">
-                This will remove all guests in this cabin from their current table assignment.
-              </p>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setConfirmDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleConfirmReassign} className="bg-blue-600 hover:bg-blue-700">
-                Reassign
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <GuestList />
       </div>
-    </DndProvider>
+
+      {/* Confirmation Dialog for Reassigning Cabin */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reassign Cabin</DialogTitle>
+            <DialogDescription>
+              This cabin is currently assigned to Table {currentTableNumber}. Do you want to reassign it to Table{" "}
+              {newTableNumber}?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center p-4 bg-amber-50 rounded-md">
+            <AlertTriangle className="h-5 w-5 text-amber-500 mr-2" />
+            <p className="text-sm text-amber-700">
+              This will remove all guests in this cabin from their current table assignment.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmReassign} className="bg-blue-600 hover:bg-blue-700">
+              Reassign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
