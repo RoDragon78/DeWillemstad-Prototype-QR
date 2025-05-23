@@ -3,28 +3,20 @@
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { clientStorage } from "@/utils/client-storage"
+
+// Add the missing imports at the top of the file
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import { Trash2, Search, RefreshCw, Check, User, Users, AlertTriangle } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Command, CommandList, CommandInput, CommandItem, CommandEmpty, CommandGroup } from "@/components/ui/command"
-import { clientStorage } from "@/utils/client-storage"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { FloorPlan } from "@/components/floor-plan"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog"
-
-import { UnassignedGuests } from "@/components/unassigned-guests"
+import { DailyFloorPlan } from "@/components/daily-floor-plan"
 import { GuestList } from "@/components/guest-list"
+import { UnassignedGuests } from "@/components/unassigned-guests"
+import { AlertCircle, CheckCircle, X, LogOut, Users, Calendar, Home } from "lucide-react"
 
 // Table capacity configuration based on the floor plan - removed tables 5 and 15
 const TABLE_CAPACITIES = {
@@ -408,296 +400,11 @@ export default function DashboardPage() {
 
     // Sort by table number
     assignments.sort((a, b) => a.table_number - b.table_number)
+
     setTableAssignments(assignments)
   }
 
-  // Assign tables automatically - start from table 20 instead of table 1
-  const assignTablesAutomatically = async () => {
-    try {
-      storeScrollPosition()
-      setAssigningTables(true)
-      setStatusMessage({
-        type: "info",
-        message: "Assigning tables automatically...",
-      })
-
-      // First, clear existing table assignments by updating each guest individually
-      const { data: allGuests, error: fetchError } = await supabase.from("guest_manifest").select("id")
-
-      if (fetchError) {
-        console.error("Error fetching guests:", fetchError)
-        throw fetchError
-      }
-
-      // Update each guest individually to clear table assignments
-      for (let i = 0; i < (allGuests || []).length; i++) {
-        const guest = allGuests[i]
-        const { error: clearError } = await supabase
-          .from("guest_manifest")
-          .update({ table_nr: null })
-          .eq("id", guest.id)
-
-        if (clearError) {
-          console.error("Error clearing table assignment:", clearError)
-          throw clearError
-        }
-      }
-
-      // Fetch all guests again to ensure we have the latest data
-      const { data: guests, error: fetchGuestsError } = await supabase
-        .from("guest_manifest")
-        .select("*")
-        .order("booking_number", { ascending: true })
-
-      if (fetchGuestsError) {
-        console.error("Error fetching guests:", fetchGuestsError)
-        throw fetchGuestsError
-      }
-
-      if (!guests || guests.length === 0) {
-        setStatusMessage({
-          type: "info",
-          message: "No guests found.",
-        })
-        setAssigningTables(false)
-        return
-      }
-
-      console.log("Starting automatic table assignment with", guests.length, "guests")
-
-      // Group guests by booking number and nationality
-      const groupedGuests = {}
-
-      for (let i = 0; i < guests.length; i++) {
-        const guest = guests[i]
-        const key = guest.booking_number + "_" + guest.nationality
-        if (!groupedGuests[key]) {
-          groupedGuests[key] = []
-        }
-        groupedGuests[key].push(guest)
-      }
-
-      console.log("Grouped guests into", Object.keys(groupedGuests).length, "groups")
-
-      // Sort groups by size (largest first) for better table utilization
-      const groupKeys = Object.keys(groupedGuests)
-      const sortedGroups = []
-
-      for (let i = 0; i < groupKeys.length; i++) {
-        sortedGroups.push(groupedGuests[groupKeys[i]])
-      }
-
-      sortedGroups.sort((a, b) => b.length - a.length)
-
-      // Start assigning tables - use reverse order of table numbers (start from highest)
-      const tableNumbers = Object.keys(TABLE_CAPACITIES)
-        .map((n) => Number.parseInt(n, 10))
-        .sort((a, b) => b - a) // Sort in descending order
-
-      const tableAssignments = {}
-      const updates = []
-
-      // Initialize table assignments
-      for (let i = 0; i < tableNumbers.length; i++) {
-        const tableNumber = tableNumbers[i]
-        tableAssignments[tableNumber] = []
-      }
-
-      console.log("Initialized table assignments for", tableNumbers.length, "tables")
-
-      // Assign groups to tables
-      for (let i = 0; i < sortedGroups.length; i++) {
-        const group = sortedGroups[i]
-        const groupSize = group.length
-        console.log("Processing group with", groupSize, "guests")
-
-        // Find a table that can accommodate this group
-        let assignedTable = null
-
-        for (let j = 0; j < tableNumbers.length; j++) {
-          const tableNumber = tableNumbers[j]
-          const capacity = TABLE_CAPACITIES[tableNumber]
-          const currentOccupancy = tableAssignments[tableNumber].length
-
-          if (currentOccupancy + groupSize <= capacity) {
-            assignedTable = tableNumber
-            console.log("Found table", tableNumber, "with capacity", capacity, "current occupancy", currentOccupancy)
-            break
-          }
-        }
-
-        // If no table can accommodate the entire group, find the table with the most available space
-        if (assignedTable === null) {
-          let maxAvailableSpace = 0
-          let bestTable = tableNumbers[0]
-
-          for (let j = 0; j < tableNumbers.length; j++) {
-            const tableNumber = tableNumbers[j]
-            const capacity = TABLE_CAPACITIES[tableNumber]
-            const currentOccupancy = tableAssignments[tableNumber].length
-            const availableSpace = capacity - currentOccupancy
-
-            if (availableSpace > maxAvailableSpace) {
-              maxAvailableSpace = availableSpace
-              bestTable = tableNumber
-            }
-          }
-
-          assignedTable = bestTable
-          console.log("No table can fit entire group, using table", bestTable, "with", maxAvailableSpace, "spaces")
-        }
-
-        // Assign as many guests as possible to this table
-        const capacity = TABLE_CAPACITIES[assignedTable]
-        const currentOccupancy = tableAssignments[assignedTable].length
-        const availableSpace = capacity - currentOccupancy
-        const guestsToAssign = group.slice(0, availableSpace)
-
-        console.log("Assigning", guestsToAssign.length, "guests to table", assignedTable)
-
-        // Add guests to this table
-        for (let j = 0; j < guestsToAssign.length; j++) {
-          tableAssignments[assignedTable].push(guestsToAssign[j])
-        }
-
-        // Prepare updates
-        for (let j = 0; j < guestsToAssign.length; j++) {
-          updates.push({
-            id: guestsToAssign[j].id,
-            table_nr: assignedTable,
-          })
-        }
-
-        // If there are remaining guests, try to assign them to other tables
-        if (availableSpace < group.length) {
-          const remainingGuests = group.slice(availableSpace)
-          console.log("Have", remainingGuests.length, "remaining guests to assign")
-
-          // Find the next best table
-          for (let j = 0; j < tableNumbers.length; j++) {
-            const tableNumber = tableNumbers[j]
-            if (tableNumber === assignedTable) continue
-
-            const capacity = TABLE_CAPACITIES[tableNumber]
-            const currentOccupancy = tableAssignments[tableNumber].length
-            const availableSpace = capacity - currentOccupancy
-
-            if (availableSpace > 0) {
-              const numToAssign = Math.min(availableSpace, remainingGuests.length)
-              const guestsToAssign = remainingGuests.slice(0, numToAssign)
-              console.log("Assigning", guestsToAssign.length, "remaining guests to table", tableNumber)
-
-              // Add guests to this table
-              for (let k = 0; k < guestsToAssign.length; k++) {
-                tableAssignments[tableNumber].push(guestsToAssign[k])
-              }
-
-              // Prepare updates
-              for (let k = 0; k < guestsToAssign.length; k++) {
-                updates.push({
-                  id: guestsToAssign[k].id,
-                  table_nr: tableNumber,
-                })
-              }
-
-              // Remove assigned guests from remaining
-              remainingGuests.splice(0, numToAssign)
-
-              if (remainingGuests.length === 0) break
-            }
-          }
-        }
-      }
-
-      console.log("Prepared", updates.length, "updates")
-
-      // Batch update all guests
-      if (updates.length > 0) {
-        // Update each guest individually to avoid batch issues
-        for (let i = 0; i < updates.length; i++) {
-          const update = updates[i]
-          const { error: updateError } = await supabase
-            .from("guest_manifest")
-            .update({ table_nr: update.table_nr })
-            .eq("id", update.id)
-
-          if (updateError) {
-            console.error("Error updating guest:", updateError)
-            throw updateError
-          }
-        }
-      }
-
-      // Refresh the data
-      await fetchGuests()
-      restoreScrollPosition()
-
-      setStatusMessage({
-        type: "success",
-        message: `Successfully assigned ${updates.length} guests to tables.`,
-      })
-    } catch (error) {
-      console.error("Error assigning tables:", error)
-      setStatusMessage({
-        type: "error",
-        message: "Failed to assign tables. Please try again.",
-      })
-    } finally {
-      setAssigningTables(false)
-    }
-  }
-
-  // Clear all table assignments
-  const clearTableAssignments = async () => {
-    try {
-      storeScrollPosition()
-      setLoading(true)
-      setStatusMessage({
-        type: "info",
-        message: "Clearing table assignments...",
-      })
-
-      // Get all guests first
-      const { data: allGuests, error: fetchError } = await supabase.from("guest_manifest").select("id")
-
-      if (fetchError) {
-        console.error("Error fetching guests:", fetchError)
-        throw fetchError
-      }
-
-      // Update each guest individually to clear table assignments
-      for (let i = 0; i < (allGuests || []).length; i++) {
-        const guest = allGuests[i]
-        const { error: clearError } = await supabase
-          .from("guest_manifest")
-          .update({ table_nr: null })
-          .eq("id", guest.id)
-
-        if (clearError) {
-          console.error("Error clearing table assignment:", clearError)
-          throw clearError
-        }
-      }
-
-      await fetchGuests()
-      restoreScrollPosition()
-
-      setStatusMessage({
-        type: "success",
-        message: "All table assignments have been cleared.",
-      })
-    } catch (error) {
-      console.error("Error clearing table assignments:", error)
-      setStatusMessage({
-        type: "error",
-        message: "Failed to clear table assignments. Please try again.",
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Add a cabin to a table manually - improved with proper cleanup
+  // Add a cabin to a table manually
   const addCabinToTable = async (cabinNumberToAdd, nationalityToAdd) => {
     try {
       storeScrollPosition()
@@ -800,460 +507,302 @@ export default function DashboardPage() {
     }
   }
 
-  // Add a new function to assign individual guests to a table
-  const assignIndividualGuest = async (guestId, guestName, cabinNumber) => {
-    try {
-      storeScrollPosition()
-      if (!newTableNumber) {
-        setStatusMessage({
-          type: "error",
-          message: "Please enter a table number first.",
-        })
-        return
-      }
-
-      const tableNumber = Number.parseInt(newTableNumber, 10)
-
-      // Validate table number
-      if (!TABLE_CAPACITIES[tableNumber]) {
-        setStatusMessage({
-          type: "error",
-          message: `Table ${tableNumber} does not exist.`,
-        })
-        return
-      }
-
-      // Check if the table has enough capacity
-      let currentTableGuestCount = 0
-      for (let i = 0; i < guests.length; i++) {
-        if (guests[i].table_nr === tableNumber) {
-          currentTableGuestCount++
-        }
-      }
-
-      if (currentTableGuestCount + 1 > TABLE_CAPACITIES[tableNumber]) {
-        setStatusMessage({
-          type: "error",
-          message: `Table ${tableNumber} does not have enough capacity for additional guests.`,
-        })
-        return
-      }
-
-      // Update the guest
-      const { error: updateError } = await supabase
-        .from("guest_manifest")
-        .update({ table_nr: tableNumber })
-        .eq("id", guestId)
-
-      if (updateError) {
-        console.error("Error updating guest:", updateError)
-        throw updateError
-      }
-
-      // Refresh data
-      await fetchGuests()
-      restoreScrollPosition()
-
-      setStatusMessage({
-        type: "success",
-        message: `Guest ${guestName} from cabin ${cabinNumber} has been assigned to table ${tableNumber}.`,
-      })
-    } catch (error) {
-      console.error("Error assigning guest to table:", error)
-      setStatusMessage({
-        type: "error",
-        message: "Failed to assign guest to table. Please try again.",
-      })
-      // Refresh data to ensure consistency
-      fetchGuests()
-    }
-  }
-
-  // Handle confirmation dialog for reassigning cabin
-  const handleConfirmReassign = async () => {
-    if (cabinToReassign) {
-      await addCabinToTable(cabinToReassign.cabin_nr, "")
-      setCabinToReassign(null)
-      setCurrentTableNumber(null)
-      setConfirmDialogOpen(false)
-    }
-  }
-
-  // Modify the removeGuestFromTable function to preserve scroll position
-  const removeGuestFromTable = async (guestId) => {
-    try {
-      storeScrollPosition()
-      setRemovingGuest(true)
-      setStatusMessage({
-        type: "info",
-        message: "Removing guest from table...",
-      })
-
-      // Store scroll position before update
-      const scrollPosition = tableGuestsRef.current ? tableGuestsRef.current.scrollTop : 0
-
-      const { error: updateError } = await supabase.from("guest_manifest").update({ table_nr: null }).eq("id", guestId)
-
-      if (updateError) {
-        console.error("Error removing guest from table:", updateError)
-        throw updateError
-      }
-
-      // Refresh the data while maintaining scroll position
-      await fetchGuests()
-
-      // Restore scroll position after state update and DOM rendering
-      if (tableGuestsRef.current) {
-        requestAnimationFrame(() => {
-          if (tableGuestsRef.current) {
-            tableGuestsRef.current.scrollTop = scrollPosition
-          }
-        })
-      }
-
-      restoreScrollPosition()
-
-      setStatusMessage({
-        type: "success",
-        message: "Guest has been removed from the table.",
-      })
-    } catch (error) {
-      console.error("Error removing guest from table:", error)
-      setStatusMessage({
-        type: "error",
-        message: "Failed to remove guest from table. Please try again.",
-      })
-    } finally {
-      setRemovingGuest(false)
-    }
-  }
-
-  // Handle sign out
-  function handleSignOut() {
-    clientStorage.removeLocalItem("isAdminAuthenticated")
-    router.push("/admin/login")
-  }
-
-  // Calculate statistics
-  const totalGuests = guests.length
-  const assignedGuests = guests.filter((g) => g.table_nr).length
-  const unassignedGuests = totalGuests - assignedGuests
-  const tablesUsed = new Set(guests.map((g) => g.table_nr).filter(Boolean)).size
-  const bookingGroups = new Set(guests.map((g) => g.booking_number)).size
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <LoadingSpinner size={40} text="Loading dashboard..." />
-      </div>
-    )
-  }
-
+  // Add the return statement at the end of the DashboardPage function, just before the final closing brace
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="p-4 bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-            <p className="text-gray-600">Table Assignment System</p>
-          </div>
-          <Button onClick={handleSignOut} variant="outline">
-            Sign Out
+      <header className="bg-white border-b sticky top-0 z-10">
+        <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+          <h1 className="text-xl font-bold">DeWillemstad Admin Dashboard</h1>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              clientStorage.removeLocalItem("isAdminAuthenticated")
+              router.push("/admin/login")
+            }}
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Logout
           </Button>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-7xl mx-auto p-4 md:p-6">
+      <main className="container mx-auto px-4 py-6">
         {statusMessage && (
           <Alert
             className={`mb-6 ${
-              statusMessage.type === "success"
-                ? "bg-green-50 border-green-200 text-green-800"
-                : statusMessage.type === "error"
-                  ? "bg-red-50 border-red-200 text-red-800"
-                  : "bg-blue-50 border-blue-200 text-blue-800"
+              statusMessage.type === "success" ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
             }`}
           >
-            <AlertDescription>{statusMessage.message}</AlertDescription>
+            {statusMessage.type === "success" ? (
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            ) : (
+              <AlertCircle className="h-4 w-4 text-red-600" />
+            )}
+            <AlertDescription className={statusMessage.type === "success" ? "text-green-700" : "text-red-700"}>
+              {statusMessage.message}
+            </AlertDescription>
+            <Button variant="ghost" size="sm" className="ml-auto h-8 w-8 p-0" onClick={() => setStatusMessage(null)}>
+              <X className="h-4 w-4" />
+            </Button>
           </Alert>
         )}
 
-        <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-          <h2 className="text-lg font-semibold mb-3">Control Panel</h2>
+        <Tabs defaultValue="tables">
+          <TabsList className="mb-6">
+            <TabsTrigger value="tables" className="flex items-center gap-1">
+              <Home className="h-4 w-4" />
+              Table Assignments
+            </TabsTrigger>
+            <TabsTrigger value="floor-plan" className="flex items-center gap-1">
+              <Users className="h-4 w-4" />
+              Floor Plan
+            </TabsTrigger>
+            <TabsTrigger value="daily-floor-plan" className="flex items-center gap-1">
+              <Calendar className="h-4 w-4" />
+              Daily Floor Plan
+            </TabsTrigger>
+            <TabsTrigger value="guest-list" className="flex items-center gap-1">
+              <Users className="h-4 w-4" />
+              Guest List
+            </TabsTrigger>
+          </TabsList>
 
-          <div className="grid grid-cols-1 gap-3 mb-4">
-            <div className="flex gap-2">
-              <Button
-                onClick={assignTablesAutomatically}
-                disabled={assigningTables}
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
-              >
-                {assigningTables ? (
-                  <>
-                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                    Assigning...
-                  </>
-                ) : (
-                  "Assign Tables Automatically"
-                )}
-              </Button>
+          <TabsContent value="tables">
+            <Card>
+              <CardHeader>
+                <CardTitle>Table Assignment System</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="text-lg font-medium mb-4">Assign Cabin to Table</h3>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label htmlFor="table-number" className="block text-sm font-medium mb-1">
+                          Table Number
+                        </label>
+                        <Input
+                          id="table-number"
+                          type="number"
+                          placeholder="Enter table number"
+                          value={newTableNumber}
+                          onChange={(e) => setNewTableNumber(e.target.value)}
+                        />
+                      </div>
+                      <div className="relative">
+                        <label htmlFor="cabin-number" className="block text-sm font-medium mb-1">
+                          Cabin Number
+                        </label>
+                        <div className="relative">
+                          <Input
+                            id="cabin-number"
+                            placeholder="Enter cabin number"
+                            value={newCabinNumber}
+                            onChange={(e) => {
+                              setNewCabinNumber(e.target.value)
+                              searchCabins(e.target.value)
+                              setCabinSearchOpen(true)
+                            }}
+                            onFocus={() => {
+                              if (newCabinNumber) {
+                                searchCabins(newCabinNumber)
+                                setCabinSearchOpen(true)
+                              }
+                            }}
+                          />
+                          {newCabinNumber && (
+                            <button
+                              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                              onClick={() => {
+                                setNewCabinNumber("")
+                                setCabinSearchOpen(false)
+                                setCabinSuggestions([])
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
 
-              <Button onClick={clearTableAssignments} variant="outline" disabled={loading} className="flex-1">
-                Clear All Assignments
-              </Button>
-            </div>
-          </div>
+                        {/* Cabin search results dropdown */}
+                        {cabinSearchOpen && cabinSuggestions.length > 0 && (
+                          <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border max-h-60 overflow-auto">
+                            {cabinSuggestions.map((cabin) => (
+                              <div
+                                key={cabin.cabin_nr}
+                                className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-0 flex justify-between items-center"
+                                onClick={() => handleCabinSelect(cabin)}
+                              >
+                                <div>
+                                  <div className="font-medium">Cabin {cabin.cabin_nr}</div>
+                                  <div className="text-xs text-gray-500">
+                                    {cabin.guests.length} guests
+                                    {cabin.table_nr && (
+                                      <span className="ml-1 text-blue-600">(Table {cabin.table_nr})</span>
+                                    )}
+                                  </div>
+                                </div>
+                                {newTableNumber && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-xs"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleQuickAssign(cabin)
+                                    }}
+                                  >
+                                    Assign
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-              <p className="text-sm text-blue-600 font-medium">Total Guests</p>
-              <p className="text-2xl font-bold">{totalGuests}</p>
-            </div>
-            <div className="bg-green-50 p-3 rounded-lg border border-green-100">
-              <p className="text-sm text-green-600 font-medium">Assigned Guests</p>
-              <p className="text-2xl font-bold">{assignedGuests}</p>
-            </div>
-            <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
-              <p className="text-sm text-amber-600 font-medium">Tables Used</p>
-              <p className="text-2xl font-bold">{tablesUsed}</p>
-            </div>
-            <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
-              <p className="text-sm text-orange-600 font-medium">Unassigned Guests</p>
-              <p className="text-2xl font-bold">{unassignedGuests}</p>
-            </div>
-            <div className="bg-red-50 p-3 rounded-lg border border-red-100">
-              <p className="text-sm text-red-600 font-medium">Unassigned Tables</p>
-              <p className="text-2xl font-bold">{Object.keys(TABLE_CAPACITIES).length - tablesUsed}</p>
-            </div>
-            <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
-              <p className="text-sm text-purple-600 font-medium">Booking Groups</p>
-              <p className="text-2xl font-bold">{bookingGroups}</p>
-            </div>
-          </div>
-        </div>
+                    {selectedCabinGuests.length > 0 && (
+                      <div className="mb-4 p-3 border rounded-md bg-gray-50">
+                        <h4 className="text-sm font-medium mb-2">Selected Cabin Guests:</h4>
+                        <ul className="text-sm">
+                          {selectedCabinGuests.map((guest) => (
+                            <li key={guest.id} className="mb-1">
+                              {guest.guest_name}
+                              {guest.nationality && <span className="text-gray-500 ml-1">({guest.nationality})</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
-        {/* Removed Tabs component and Table Assignments tab - only show Floor Plan */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-              <h2 className="text-lg font-semibold mb-3">Floor Plan</h2>
-              <div className="border rounded-lg overflow-hidden">
+                    <Button
+                      onClick={() => addCabinToTable(newCabinNumber, "")}
+                      disabled={!newTableNumber || !newCabinNumber}
+                    >
+                      Assign Cabin to Table
+                    </Button>
+
+                    {/* Table preview */}
+                    {showTablePreview && (
+                      <div className="mt-4 p-3 border rounded-md bg-blue-50">
+                        <h4 className="text-sm font-medium mb-2">Current Guests at Table {newTableNumber}:</h4>
+                        {tableGuestPreview.length > 0 ? (
+                          <ul className="text-sm">
+                            {tableGuestPreview.map((guest) => (
+                              <li key={guest.id} className="mb-1">
+                                {guest.guest_name} (Cabin {guest.cabin_nr})
+                                {guest.nationality && <span className="text-gray-500 ml-1">({guest.nationality})</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-sm">No guests currently assigned to this table.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-medium mb-4">Unassigned Guests</h3>
+                    <UnassignedGuests
+                      currentTableNumber={newTableNumber}
+                      onAssignGuest={(guestId, guestName, cabinNumber) => {
+                        addCabinToTable(cabinNumber, "")
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-8">
+                  <h3 className="text-lg font-medium mb-4">Current Table Assignments</h3>
+                  {tableAssignments.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {tableAssignments.map((assignment, index) => (
+                        <div key={`${assignment.table_number}-${index}`} className="border rounded-md p-3 bg-white">
+                          <div className="flex justify-between items-center mb-2">
+                            <h4 className="font-medium">Table {assignment.table_number}</h4>
+                            <span className="text-sm text-gray-500">{assignment.nationality || "Unknown"}</span>
+                          </div>
+                          <div className="text-sm">
+                            <div>
+                              Cabins:{" "}
+                              {assignment.cabins.map((cabin) => (
+                                <span
+                                  key={cabin}
+                                  className="inline-block bg-blue-100 text-blue-800 rounded-full px-2 py-0.5 text-xs mr-1 mb-1"
+                                >
+                                  {cabin}
+                                </span>
+                              ))}
+                            </div>
+                            {assignment.booking_number && assignment.booking_number !== "Unknown" && (
+                              <div className="text-gray-500 mt-1">Booking: {assignment.booking_number}</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      No table assignments yet. Use the form above to assign cabins to tables.
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="floor-plan">
+            <Card>
+              <CardHeader>
+                <CardTitle>Floor Plan</CardTitle>
+              </CardHeader>
+              <CardContent>
                 <FloorPlan
                   tableCapacities={TABLE_CAPACITIES}
                   tableAssignments={tableAssignments}
                   guests={guests}
                   onTableUpdate={fetchGuests}
                 />
-              </div>
-            </div>
-          </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-              <h2 className="text-lg font-semibold mb-3">Add Cabin to Table</h2>
+          <TabsContent value="daily-floor-plan">
+            <DailyFloorPlan tableCapacities={TABLE_CAPACITIES} guests={guests} onTableUpdate={fetchGuests} />
+          </TabsContent>
 
-              <div className="space-y-3">
-                <div>
-                  <Label htmlFor="table-number">Table Number</Label>
-                  <Input
-                    id="table-number"
-                    placeholder="e.g. 20"
-                    value={newTableNumber}
-                    onChange={(e) => setNewTableNumber(e.target.value)}
-                  />
+          <TabsContent value="guest-list">
+            <GuestList />
+          </TabsContent>
+        </Tabs>
+      </main>
 
-                  {/* Table guest preview */}
-                  {showTablePreview && (
-                    <div className="mt-2 p-3 bg-blue-50 rounded-md">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-medium">Current Table Guests:</h4>
-                        <Badge variant="outline" className="bg-blue-100">
-                          {tableGuestPreview.length}/{TABLE_CAPACITIES[Number.parseInt(newTableNumber, 10)] || 0} seats
-                        </Badge>
-                      </div>
-                      <div ref={tableGuestsRef} className="max-h-24 overflow-y-auto">
-                        <ul className="space-y-1">
-                          {tableGuestPreview.map((guest) => (
-                            <li key={guest.id} className="text-sm flex items-center justify-between">
-                              <div className="flex items-center">
-                                <User className="h-3 w-3 mr-1 text-blue-400" />
-                                {guest.guest_name || "Unknown"} ({guest.cabin_nr})
-                              </div>
-                              <button
-                                onClick={() => removeGuestFromTable(guest.id)}
-                                disabled={removingGuest}
-                                className="text-red-500 hover:text-red-700 p-1"
-                                title="Remove guest from table"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="cabin-number">Cabin Number</Label>
-                  <div className="relative mt-1">
-                    <Popover
-                      open={cabinSearchOpen}
-                      onOpenChange={(open) => {
-                        setCabinSearchOpen(open)
-                        if (!open) {
-                          setCabinSuggestions([]) // Clear suggestions when closing
-                        }
-                      }}
-                    >
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={cabinSearchOpen}
-                          className="w-full justify-between"
-                        >
-                          {newCabinNumber || "Select cabin..."}
-                          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-full p-0">
-                        <Command>
-                          <CommandInput
-                            placeholder="Search cabins..."
-                            onValueChange={(value) => {
-                              if (value.length === 0) {
-                                setCabinSuggestions([]) // Clear suggestions when input is empty
-                              } else {
-                                searchCabins(value)
-                              }
-                            }}
-                          />
-                          <CommandList>
-                            <CommandEmpty>
-                              {cabinSuggestions.length === 0
-                                ? "Type at least 2 characters to search..."
-                                : "No cabins found."}
-                            </CommandEmpty>
-                            <CommandGroup>
-                              {cabinSuggestions.map((cabin) => (
-                                <CommandItem
-                                  key={cabin.cabin_nr}
-                                  value={cabin.cabin_nr}
-                                  onSelect={() => handleCabinSelect(cabin)}
-                                  className="flex justify-between items-center cursor-pointer hover:bg-blue-50 active:bg-blue-100 transition-colors p-2"
-                                >
-                                  <div className="flex items-center">
-                                    <Check
-                                      className={`mr-2 h-4 w-4 ${
-                                        newCabinNumber === cabin.cabin_nr ? "opacity-100 text-blue-600" : "opacity-0"
-                                      }`}
-                                    />
-                                    <span className="text-sm font-medium">
-                                      {cabin.cabin_nr} - {cabin.guests.length}{" "}
-                                      {cabin.guests.length === 1 ? "guest" : "guests"}
-                                    </span>
-                                  </div>
-
-                                  {cabin.table_nr ? (
-                                    <div className="flex items-center gap-2">
-                                      <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">
-                                        Table {cabin.table_nr}
-                                      </Badge>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-6 px-2 text-xs hover:bg-blue-100 hover:text-blue-700"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          handleQuickAssign(cabin)
-                                        }}
-                                      >
-                                        Reassign
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-6 px-2 text-xs hover:bg-blue-100 hover:text-blue-700"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleQuickAssign(cabin)
-                                      }}
-                                    >
-                                      Assign
-                                    </Button>
-                                  )}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                </div>
-
-                {selectedCabinGuests.length > 0 && (
-                  <div className="mt-2 p-3 bg-gray-50 rounded-md">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-medium">Guest Names:</h4>
-                      <Badge variant="outline" className="bg-gray-100">
-                        <Users className="h-3 w-3 mr-1" />
-                        {selectedCabinGuests.length}
-                      </Badge>
-                    </div>
-                    <ul className="space-y-1 max-h-24 overflow-y-auto">
-                      {selectedCabinGuests.map((guest) => (
-                        <li key={guest.id} className="text-sm flex items-center">
-                          <User className="h-3 w-3 mr-1 text-gray-400" />
-                          {guest.guest_name || "Unknown"}
-                          {guest.nationality && <span className="text-gray-500 ml-1">({guest.nationality})</span>}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <Button
-                  onClick={() => addCabinToTable()}
-                  className="w-full bg-blue-600 hover:bg-blue-700"
-                  disabled={!newTableNumber || !newCabinNumber}
-                >
-                  Add Cabin to Table
-                </Button>
-
-                <UnassignedGuests currentTableNumber={newTableNumber} onAssignGuest={assignIndividualGuest} />
-              </div>
-            </div>
-          </div>
-        </div>
-        <GuestList />
-      </div>
-
-      {/* Confirmation Dialog for Reassigning Cabin */}
+      {/* Confirmation Dialog for reassigning cabins */}
       <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reassign Cabin</DialogTitle>
-            <DialogDescription>
-              This cabin is currently assigned to Table {currentTableNumber}. Do you want to reassign it to Table{" "}
-              {newTableNumber}?
-            </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center p-4 bg-amber-50 rounded-md">
-            <AlertTriangle className="h-5 w-5 text-amber-500 mr-2" />
-            <p className="text-sm text-amber-700">
-              This will remove all guests in this cabin from their current table assignment.
+          <div className="py-4">
+            <p>
+              Cabin {cabinToReassign?.cabin_nr} is already assigned to Table {currentTableNumber}. Do you want to
+              reassign it to Table {newTableNumber}?
             </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleConfirmReassign} className="bg-blue-600 hover:bg-blue-700">
+            <Button
+              onClick={() => {
+                setConfirmDialogOpen(false)
+                if (cabinToReassign) {
+                  addCabinToTable(cabinToReassign.cabin_nr, "")
+                }
+              }}
+            >
               Reassign
             </Button>
           </DialogFooter>
