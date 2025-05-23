@@ -7,6 +7,8 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 
 type SortDirection = "asc" | "desc"
 type SortField = "guest_name" | "cabin_nr" | "booking_number" | "table_nr" | "nationality"
@@ -28,6 +30,42 @@ export function GuestList() {
   const tableRef = useRef<HTMLTableElement>(null)
   const supabase = createClientComponentClient()
 
+  const [filterMealStatus, setFilterMealStatus] = useState("all")
+  const [filterNationality, setFilterNationality] = useState("")
+  const [selectedGuests, setSelectedGuests] = useState(new Set())
+  const [bulkTableNumber, setBulkTableNumber] = useState("")
+  const [availableNationalities, setAvailableNationalities] = useState([])
+  const [mealSelections, setMealSelections] = useState({})
+
+  const fetchMealSelections = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from("meal_selections").select("guest_id, day, meal_name, meal_category")
+
+      if (error) {
+        console.error("Error fetching meal selections:", error)
+        return
+      }
+
+      // Group meal selections by guest
+      const guestMealData = {}
+      if (data) {
+        data.forEach((selection) => {
+          if (!guestMealData[selection.guest_id]) {
+            guestMealData[selection.guest_id] = {}
+          }
+          guestMealData[selection.guest_id][selection.day] = {
+            meal_name: selection.meal_name,
+            meal_category: selection.meal_category,
+          }
+        })
+      }
+
+      setMealSelections(guestMealData)
+    } catch (error) {
+      console.error("Error fetching meal selections:", error)
+    }
+  }, [supabase])
+
   // Fetch all guests
   const fetchGuests = useCallback(async () => {
     try {
@@ -47,12 +85,20 @@ export function GuestList() {
       const tables = Array.from(new Set(data?.map((g) => g.table_nr).filter(Boolean) || []))
       tables.sort((a, b) => a - b)
       setAvailableTables(tables)
+
+      // Get unique nationalities
+      const nationalities = Array.from(new Set(data?.map((g) => g.nationality).filter(Boolean) || []))
+      nationalities.sort()
+      setAvailableNationalities(nationalities)
+
+      // Fetch meal selections
+      await fetchMealSelections()
     } catch (error) {
       console.error("Error fetching guests:", error)
     } finally {
       setLoading(false)
     }
-  }, [supabase, sortField, sortDirection])
+  }, [supabase, sortField, sortDirection, fetchMealSelections])
 
   // Apply filters and search
   useEffect(() => {
@@ -82,6 +128,26 @@ export function GuestList() {
       result = result.filter((guest) => guest.table_nr === Number.parseInt(filterTable))
     }
 
+    // Apply nationality filter
+    if (filterNationality) {
+      result = result.filter((guest) => guest.nationality === filterNationality)
+    }
+
+    // Apply meal status filter
+    if (filterMealStatus !== "all") {
+      result = result.filter((guest) => {
+        const guestMeals = mealSelections[guest.id]
+        const hasMealSelections = guestMeals && Object.keys(guestMeals).length > 0
+
+        if (filterMealStatus === "with-meals") {
+          return hasMealSelections
+        } else if (filterMealStatus === "without-meals") {
+          return !hasMealSelections
+        }
+        return true
+      })
+    }
+
     // Calculate total pages
     setTotalPages(Math.max(1, Math.ceil(result.length / pageSize)))
 
@@ -95,7 +161,17 @@ export function GuestList() {
     if (currentPage > Math.ceil(result.length / pageSize)) {
       setCurrentPage(1)
     }
-  }, [guests, searchTerm, filterType, filterTable, currentPage, pageSize])
+  }, [
+    guests,
+    searchTerm,
+    filterType,
+    filterTable,
+    filterNationality,
+    filterMealStatus,
+    mealSelections,
+    currentPage,
+    pageSize,
+  ])
 
   // Set up real-time subscription
   useEffect(() => {
@@ -132,6 +208,37 @@ export function GuestList() {
     }
   }
 
+  const handleBulkAssignment = async () => {
+    if (!bulkTableNumber || selectedGuests.size === 0) {
+      alert("Please select guests and enter a table number")
+      return
+    }
+
+    try {
+      const tableNumber = Number.parseInt(bulkTableNumber)
+      const guestIds = Array.from(selectedGuests)
+
+      for (const guestId of guestIds) {
+        const { error } = await supabase.from("guest_manifest").update({ table_nr: tableNumber }).eq("id", guestId)
+
+        if (error) {
+          console.error("Error updating guest:", error)
+          throw error
+        }
+      }
+
+      // Clear selections and refresh
+      setSelectedGuests(new Set())
+      setBulkTableNumber("")
+      await fetchGuests()
+
+      alert(`Successfully assigned ${guestIds.length} guests to table ${tableNumber}`)
+    } catch (error) {
+      console.error("Error in bulk assignment:", error)
+      alert("Failed to assign guests. Please try again.")
+    }
+  }
+
   // Export to CSV
   const exportToCSV = () => {
     // Get all guests (not just the filtered/paginated ones)
@@ -158,19 +265,29 @@ export function GuestList() {
       dataToExport = dataToExport.filter((guest) => guest.table_nr === Number.parseInt(filterTable))
     }
 
-    // Create CSV content
-    const headers = ["Guest Name", "Cabin", "Booking Number", "Table", "Nationality"]
+    if (filterNationality) {
+      dataToExport = dataToExport.filter((guest) => guest.nationality === filterNationality)
+    }
+
+    // Create CSV content with meal data
+    const headers = ["Guest Name", "Cabin", "Booking Number", "Table", "Nationality", "Meal Selections", "Meal Status"]
     const csvContent = [
       headers.join(","),
-      ...dataToExport.map((guest) =>
-        [
+      ...dataToExport.map((guest) => {
+        const guestMeals = mealSelections[guest.id]
+        const mealCount = guestMeals ? Object.keys(guestMeals).length : 0
+        const mealStatus = mealCount > 0 ? `${mealCount} days selected` : "No meals selected"
+
+        return [
           `"${guest.guest_name || ""}"`,
           `"${guest.cabin_nr || ""}"`,
           `"${guest.booking_number || ""}"`,
           guest.table_nr || "",
           `"${guest.nationality || ""}"`,
-        ].join(","),
-      ),
+          mealCount,
+          `"${mealStatus}"`,
+        ].join(",")
+      }),
     ].join("\n")
 
     // Create and download the file
@@ -178,10 +295,20 @@ export function GuestList() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement("a")
     link.setAttribute("href", url)
-    link.setAttribute("download", "guest_list.csv")
+    link.setAttribute("download", `guest_list_${new Date().toISOString().split("T")[0]}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
+  }
+
+  const getMealSelectionStatus = (guestId) => {
+    const guestMeals = mealSelections[guestId]
+    if (!guestMeals) return { count: 0, status: "No meals selected", color: "bg-red-100 text-red-800" }
+
+    const mealCount = Object.keys(guestMeals).length
+    if (mealCount >= 5) return { count: mealCount, status: "Complete", color: "bg-green-100 text-green-800" }
+    if (mealCount >= 3) return { count: mealCount, status: "Partial", color: "bg-yellow-100 text-yellow-800" }
+    return { count: mealCount, status: "Started", color: "bg-blue-100 text-blue-800" }
   }
 
   // Clear all filters
@@ -189,6 +316,8 @@ export function GuestList() {
     setSearchTerm("")
     setFilterType("all")
     setFilterTable("")
+    setFilterNationality("")
+    setFilterMealStatus("all")
     setCurrentPage(1)
   }
 
@@ -226,7 +355,7 @@ export function GuestList() {
           )}
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <div className="w-40">
             <Select
               value={filterType}
@@ -271,7 +400,48 @@ export function GuestList() {
             </div>
           )}
 
-          {(searchTerm || filterType !== "all" || filterTable) && (
+          <div className="w-40">
+            <Select
+              value={filterNationality}
+              onValueChange={(value) => {
+                setFilterNationality(value)
+                setCurrentPage(1)
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Nationality" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Nationalities</SelectItem>
+                {availableNationalities.map((nationality) => (
+                  <SelectItem key={nationality} value={nationality}>
+                    {nationality}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-40">
+            <Select
+              value={filterMealStatus}
+              onValueChange={(value) => {
+                setFilterMealStatus(value)
+                setCurrentPage(1)
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Meal Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Meal Status</SelectItem>
+                <SelectItem value="with-meals">With Meals</SelectItem>
+                <SelectItem value="without-meals">Without Meals</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {(searchTerm || filterType !== "all" || filterTable || filterNationality || filterMealStatus !== "all") && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="flex items-center gap-1">
               <X className="h-4 w-4" />
               Clear
@@ -279,6 +449,28 @@ export function GuestList() {
           )}
         </div>
       </div>
+
+      {selectedGuests.size > 0 && (
+        <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-blue-800">{selectedGuests.size} guest(s) selected</span>
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Table number"
+                value={bulkTableNumber}
+                onChange={(e) => setBulkTableNumber(e.target.value)}
+                className="w-32 h-8"
+              />
+              <Button size="sm" onClick={handleBulkAssignment}>
+                Assign to Table
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setSelectedGuests(new Set())}>
+                Clear Selection
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <LoadingSpinner size={24} text="Loading guest list..." />
@@ -288,21 +480,36 @@ export function GuestList() {
             <table ref={tableRef} className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-4 py-3 text-left">
+                    <Checkbox
+                      checked={selectedGuests.size === filteredGuests.length && filteredGuests.length > 0}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedGuests(new Set(filteredGuests.map((g) => g.id)))
+                        } else {
+                          setSelectedGuests(new Set())
+                        }
+                      }}
+                    />
+                  </th>
                   {[
                     { id: "guest_name", label: "Guest Name" },
                     { id: "cabin_nr", label: "Cabin" },
                     { id: "booking_number", label: "Booking" },
                     { id: "table_nr", label: "Table" },
                     { id: "nationality", label: "Nationality" },
+                    { id: "meal_status", label: "Meal Status" },
                   ].map((column) => (
                     <th
                       key={column.id}
-                      onClick={() => handleSort(column.id as SortField)}
-                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => column.id !== "meal_status" && handleSort(column.id as SortField)}
+                      className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
+                        column.id !== "meal_status" ? "cursor-pointer hover:bg-gray-100" : ""
+                      }`}
                     >
                       <div className="flex items-center">
                         {column.label}
-                        {sortField === column.id && (
+                        {sortField === column.id && column.id !== "meal_status" && (
                           <span className="ml-1">
                             {sortDirection === "asc" ? (
                               <ArrowUp className="h-3 w-3" />
@@ -318,26 +525,48 @@ export function GuestList() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredGuests.length > 0 ? (
-                  filteredGuests.map((guest) => (
-                    <tr key={guest.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 whitespace-nowrap text-sm">{guest.guest_name || "Unknown"}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm">{guest.cabin_nr || "Unknown"}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm">{guest.booking_number || "Unknown"}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm">
-                        {guest.table_nr ? (
-                          <span className="font-medium">{guest.table_nr}</span>
-                        ) : (
-                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                            Unassigned
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm">{guest.nationality || "Unknown"}</td>
-                    </tr>
-                  ))
+                  filteredGuests.map((guest) => {
+                    const mealStatus = getMealSelectionStatus(guest.id)
+                    return (
+                      <tr key={guest.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <Checkbox
+                            checked={selectedGuests.has(guest.id)}
+                            onCheckedChange={(checked) => {
+                              const newSelected = new Set(selectedGuests)
+                              if (checked) {
+                                newSelected.add(guest.id)
+                              } else {
+                                newSelected.delete(guest.id)
+                              }
+                              setSelectedGuests(newSelected)
+                            }}
+                          />
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">{guest.guest_name || "Unknown"}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">{guest.cabin_nr || "Unknown"}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">{guest.booking_number || "Unknown"}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                          {guest.table_nr ? (
+                            <span className="font-medium">{guest.table_nr}</span>
+                          ) : (
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                              Unassigned
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">{guest.nationality || "Unknown"}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                          <Badge className={mealStatus.color}>
+                            {mealStatus.status} ({mealStatus.count}/6)
+                          </Badge>
+                        </td>
+                      </tr>
+                    )
+                  })
                 ) : (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
                       No guests found matching the current filters.
                     </td>
                   </tr>
