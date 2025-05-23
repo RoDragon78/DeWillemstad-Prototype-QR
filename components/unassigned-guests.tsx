@@ -23,24 +23,29 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
   const [assigningGuest, setAssigningGuest] = useState<string | null>(null)
   const supabase = createClientComponentClient()
 
-  // Fetch unassigned guests
+  // Fetch unassigned guests with improved filtering
   const fetchUnassignedGuests = async () => {
     try {
       setIsLoading(true)
+
+      // Fetch all guests first, then filter on client side for better real-time updates
       const { data, error } = await supabase
         .from("guest_manifest")
         .select("*")
-        .is("table_nr", null)
         .order("cabin_nr", { ascending: true })
         .order("guest_name", { ascending: true })
 
       if (error) {
-        console.error("Error fetching unassigned guests:", error)
+        console.error("Error fetching guests:", error)
         return
       }
 
-      setUnassignedGuests(data || [])
-      setFilteredGuests(data || [])
+      // Filter to only unassigned guests (table_nr is null or undefined)
+      const unassigned = (data || []).filter((guest) => guest.table_nr === null || guest.table_nr === undefined)
+
+      console.log("Fetched unassigned guests:", unassigned)
+      setUnassignedGuests(unassigned)
+      setFilteredGuests(unassigned)
     } catch (error) {
       console.error("Error in fetchUnassignedGuests:", error)
     } finally {
@@ -51,7 +56,7 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
   useEffect(() => {
     fetchUnassignedGuests()
 
-    // Set up real-time subscription
+    // Set up real-time subscription with improved filtering
     const subscription = supabase
       .channel("unassigned_guests_changes")
       .on(
@@ -61,7 +66,9 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
           schema: "public",
           table: "guest_manifest",
         },
-        () => {
+        (payload) => {
+          console.log("Guest manifest change received:", payload)
+          // Refresh the unassigned guests list
           fetchUnassignedGuests()
         },
       )
@@ -89,7 +96,7 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
     setFilteredGuests(filtered)
   }, [searchTerm, unassignedGuests])
 
-  // Handle guest assignment
+  // Handle guest assignment with improved error handling
   const handleAssignGuest = async (
     guestId: string,
     guestName: string,
@@ -102,9 +109,23 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
       event.stopPropagation()
     }
 
+    if (!currentTableNumber) {
+      console.error("No table number selected")
+      return
+    }
+
     setAssigningGuest(guestId)
     try {
+      console.log(`Assigning guest ${guestName} (${guestId}) to table ${currentTableNumber}`)
       await onAssignGuest(guestId, guestName, cabinNumber)
+
+      // Immediately remove the guest from local state for better UX
+      setUnassignedGuests((prev) => prev.filter((guest) => guest.id !== guestId))
+      setFilteredGuests((prev) => prev.filter((guest) => guest.id !== guestId))
+    } catch (error) {
+      console.error("Error assigning guest:", error)
+      // Refresh the list in case of error
+      fetchUnassignedGuests()
     } finally {
       setAssigningGuest(null)
     }

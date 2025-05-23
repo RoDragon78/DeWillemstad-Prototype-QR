@@ -18,7 +18,7 @@ import { GuestList } from "@/components/guest-list"
 import { UnassignedGuests } from "@/components/unassigned-guests"
 import { AlertCircle, CheckCircle, X, LogOut, Users, Calendar, Home } from "lucide-react"
 
-// Table capacity configuration based on the floor plan - removed tables 5 and 15
+// Updated table capacity configuration - added table 15
 const TABLE_CAPACITIES = {
   1: 4,
   2: 6,
@@ -33,6 +33,7 @@ const TABLE_CAPACITIES = {
   12: 4,
   13: 4,
   14: 6,
+  15: 6, // New table 15
   16: 4,
   17: 6,
   18: 6,
@@ -567,7 +568,7 @@ export default function DashboardPage() {
     setTableAssignments(assignments)
   }
 
-  // Add a cabin to a table manually
+  // Add a cabin to a table manually with improved error handling
   const addCabinToTable = async (cabinNumberToAdd, nationalityToAdd) => {
     try {
       storeScrollPosition()

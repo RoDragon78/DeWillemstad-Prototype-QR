@@ -9,26 +9,36 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Search, Filter, Printer, Calendar, Users, ChefHat } from "lucide-react"
 
-// Table positions (same as FloorPlan)
+// Updated table positions to match the new floor plan layout
 const TABLE_POSITIONS = {
-  1: { x: 50, y: 50, width: 100, height: 100, shape: "rect" },
-  2: { x: 50, y: 170, width: 140, height: 70, shape: "rect" },
-  3: { x: 50, y: 260, width: 140, height: 70, shape: "rect" },
-  4: { x: 50, y: 350, width: 100, height: 100, shape: "rect" },
-  6: { x: 250, y: 400, width: 140, height: 70, shape: "rect" },
-  7: { x: 250, y: 220, width: 100, height: 100, shape: "rect" },
-  8: { x: 250, y: 120, width: 90, height: 90, shape: "circle" },
-  9: { x: 250, y: 20, width: 90, height: 90, shape: "circle" },
-  10: { x: 450, y: 20, width: 90, height: 90, shape: "circle" },
-  11: { x: 450, y: 120, width: 90, height: 90, shape: "circle" },
-  12: { x: 450, y: 220, width: 100, height: 100, shape: "rect" },
-  13: { x: 450, y: 400, width: 90, height: 90, shape: "circle" },
-  14: { x: 320, y: 500, width: 160, height: 70, shape: "rect" },
-  16: { x: 650, y: 450, width: 100, height: 100, shape: "rect" },
-  17: { x: 650, y: 350, width: 140, height: 70, shape: "rect" },
-  18: { x: 650, y: 260, width: 140, height: 70, shape: "rect" },
-  19: { x: 650, y: 170, width: 140, height: 70, shape: "rect" },
-  20: { x: 650, y: 50, width: 100, height: 100, shape: "rect" },
+  // Row 1 - Top row
+  1: { x: 50, y: 30, width: 100, height: 80, shape: "rect" },
+  9: { x: 200, y: 30, width: 80, height: 80, shape: "circle" },
+  10: { x: 330, y: 30, width: 80, height: 80, shape: "circle" },
+  20: { x: 460, y: 30, width: 100, height: 80, shape: "rect" },
+
+  // Row 2
+  2: { x: 50, y: 130, width: 120, height: 60, shape: "rect" },
+  8: { x: 200, y: 130, width: 80, height: 80, shape: "circle" },
+  11: { x: 330, y: 130, width: 80, height: 80, shape: "circle" },
+  19: { x: 460, y: 130, width: 120, height: 60, shape: "rect" },
+
+  // Row 3
+  3: { x: 50, y: 230, width: 120, height: 60, shape: "rect" },
+  7: { x: 200, y: 230, width: 100, height: 80, shape: "rect" },
+  12: { x: 330, y: 230, width: 100, height: 80, shape: "rect" },
+  18: { x: 460, y: 230, width: 120, height: 60, shape: "rect" },
+
+  // Row 4
+  4: { x: 50, y: 330, width: 100, height: 80, shape: "rect" },
+  6: { x: 200, y: 330, width: 120, height: 60, shape: "rect" },
+  13: { x: 330, y: 330, width: 80, height: 80, shape: "circle" },
+  17: { x: 460, y: 330, width: 120, height: 60, shape: "rect" },
+
+  // Row 5 - Bottom row
+  14: { x: 120, y: 430, width: 140, height: 60, shape: "rect" },
+  15: { x: 290, y: 430, width: 120, height: 60, shape: "rect" }, // New table 15
+  16: { x: 440, y: 430, width: 100, height: 80, shape: "rect" },
 }
 
 // Day mapping - updated to use day names instead of numbers
@@ -506,8 +516,8 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
             </CardHeader>
             <CardContent>
               <div className="border rounded-lg overflow-hidden mb-4">
-                <svg width="100%" height="600" viewBox="0 0 800 600" className="bg-white">
-                  <rect x="0" y="0" width="800" height="600" fill="white" />
+                <svg width="100%" height="600" viewBox="0 0 650 550" className="bg-white">
+                  <rect x="0" y="0" width="650" height="550" fill="white" />
                   {renderMealTables()}
 
                   {/* Updated Legend */}
