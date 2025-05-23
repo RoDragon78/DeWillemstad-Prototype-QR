@@ -308,10 +308,11 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
         let yOffset = 35
 
         // Show cabin numbers (limit to first 4 cabins to avoid overcrowding)
-        cabins.slice(0, 4).forEach((cabin, index) => {
+        const cabinNumbers = cabins.slice(0, 4).join("/")
+        if (cabinNumbers) {
           tables.push(
             <text
-              key={`cabin-${tableNumber}-${cabin}`}
+              key={`cabins-${tableNumber}`}
               x={position.x + position.width / 2}
               y={position.y + yOffset}
               textAnchor="middle"
@@ -320,13 +321,13 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
               fontSize="11"
               className="select-none"
             >
-              Cabin {cabin}
+              {cabinNumbers}
             </text>,
           )
           yOffset += 14
-        })
+        }
 
-        // If more than 4 cabins, show "..."
+        // If more than 4 cabins, show count
         if (cabins.length > 4) {
           tables.push(
             <text
@@ -495,7 +496,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
                   <rect x="0" y="0" width="650" height="620" fill="white" />
                   {renderMealTables()}
 
-                  {/* Enhanced Legend */}
+                  {/* Simplified Legend */}
                   <g transform="translate(20, 520)">
                     <text x="0" y="0" fontWeight="medium" fontSize="12" fill="rgb(75, 85, 99)">
                       Meal Selection Status:
@@ -518,15 +519,6 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
                     <circle cx="8" cy="69" r="5" fill="rgb(239, 68, 68)" />
                     <text x="18" y="73" fontSize="11" fill="rgb(75, 85, 99)">
                       No meals selected
-                    </text>
-
-                    <circle cx="200" cy="18" r="5" fill="rgb(239, 246, 255)" />
-                    <text x="210" y="22" fontSize="11" fill="rgb(75, 85, 99)">
-                      No guests assigned
-                    </text>
-
-                    <text x="200" y="45" fontSize="11" fill="rgb(75, 85, 99)" fontWeight="medium">
-                      Meal codes: M=Meat, F=Fish, V=Vegetarian
                     </text>
                   </g>
                 </svg>
