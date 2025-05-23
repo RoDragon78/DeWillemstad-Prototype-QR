@@ -56,6 +56,11 @@ export default function DashboardPage() {
   const [statusMessage, setStatusMessage] = useState(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
 
+  // Add state for import functionality
+  const [importing, setImporting] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [selectedFile, setSelectedFile] = useState(null)
+
   // Form state for adding a cabin manually
   const [newTableNumber, setNewTableNumber] = useState("")
   const [newCabinNumber, setNewCabinNumber] = useState("")
@@ -277,6 +282,152 @@ export default function DashboardPage() {
       })
     } finally {
       setAssigningTables(false)
+    }
+  }
+
+  // Import Excel file and replace guest manifest data
+  const importGuestManifest = async () => {
+    if (!selectedFile) {
+      setStatusMessage({
+        type: "error",
+        message: "Please select an Excel file to import.",
+      })
+      return
+    }
+
+    try {
+      setImporting(true)
+      storeScrollPosition()
+      setStatusMessage(null)
+
+      // Parse Excel file
+      const formData = new FormData()
+      formData.append("file", selectedFile)
+
+      // Read the Excel file
+      const fileBuffer = await selectedFile.arrayBuffer()
+
+      // Import XLSX library dynamically
+      const XLSX = await import("xlsx")
+      const workbook = XLSX.read(fileBuffer, { type: "array" })
+      const sheetName = workbook.SheetNames[0]
+      const worksheet = workbook.Sheets[sheetName]
+      const jsonData = XLSX.utils.sheet_to_json(worksheet)
+
+      console.log("Parsed Excel data:", jsonData)
+
+      // Validate required columns
+      if (jsonData.length === 0) {
+        throw new Error("Excel file is empty")
+      }
+
+      const requiredColumns = ["guest_name", "cabin_nr", "nationality", "booking_number", "cruise_id"]
+      const firstRow = jsonData[0]
+      const missingColumns = requiredColumns.filter((col) => !(col in firstRow))
+
+      if (missingColumns.length > 0) {
+        throw new Error(`Missing required columns: ${missingColumns.join(", ")}`)
+      }
+
+      // Step 1: Clear existing data
+      setStatusMessage({
+        type: "info",
+        message: "Clearing existing guest manifest data...",
+      })
+
+      const { error: deleteError } = await supabase
+        .from("guest_manifest")
+        .delete()
+        .neq("id", "00000000-0000-0000-0000-000000000000") // Delete all records
+
+      if (deleteError) {
+        console.error("Error clearing guest manifest:", deleteError)
+        throw new Error("Failed to clear existing data")
+      }
+
+      // Step 2: Insert new data
+      setStatusMessage({
+        type: "info",
+        message: `Importing ${jsonData.length} guest records...`,
+      })
+
+      // Process data in batches to avoid timeout
+      const batchSize = 100
+      let importedCount = 0
+
+      for (let i = 0; i < jsonData.length; i += batchSize) {
+        const batch = jsonData.slice(i, i + batchSize)
+
+        // Prepare batch data
+        const batchData = batch.map((row) => ({
+          guest_name: row.guest_name?.toString().trim() || "",
+          cabin_nr: row.cabin_nr?.toString().trim() || "",
+          nationality: row.nationality?.toString().trim() || "",
+          booking_number: row.booking_number?.toString().trim() || "",
+          cruise_id: row.cruise_id?.toString().trim() || "",
+          table_nr: null, // Reset table assignments
+        }))
+
+        const { error: insertError } = await supabase.from("guest_manifest").insert(batchData)
+
+        if (insertError) {
+          console.error("Error inserting batch:", insertError)
+          throw new Error(`Failed to import data at batch ${Math.floor(i / batchSize) + 1}`)
+        }
+
+        importedCount += batch.length
+
+        // Update progress
+        setStatusMessage({
+          type: "info",
+          message: `Imported ${importedCount} of ${jsonData.length} guest records...`,
+        })
+      }
+
+      // Refresh data
+      await fetchGuests()
+      triggerRefresh()
+      restoreScrollPosition()
+
+      // Close dialog and reset
+      setShowImportDialog(false)
+      setSelectedFile(null)
+
+      setStatusMessage({
+        type: "success",
+        message: `Successfully imported ${importedCount} guest records. All table assignments have been reset.`,
+      })
+    } catch (error) {
+      console.error("Error importing guest manifest:", error)
+      setStatusMessage({
+        type: "error",
+        message: error.message || "Failed to import guest manifest. Please check the file format and try again.",
+      })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  // Handle file selection
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0]
+    if (file) {
+      // Validate file type
+      const validTypes = [
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+        "application/vnd.ms-excel", // .xls
+        "text/csv", // .csv
+      ]
+
+      if (!validTypes.includes(file.type) && !file.name.match(/\.(xlsx|xls|csv)$/i)) {
+        setStatusMessage({
+          type: "error",
+          message: "Please select a valid Excel file (.xlsx, .xls) or CSV file.",
+        })
+        return
+      }
+
+      setSelectedFile(file)
     }
   }
 
@@ -894,6 +1045,14 @@ export default function DashboardPage() {
                     <Button variant="outline" onClick={clearAllAssignments} disabled={assigningTables || loading}>
                       Clear All Assignments
                     </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowImportDialog(true)}
+                      disabled={assigningTables || loading || importing}
+                      className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                    >
+                      Import Guest Manifest
+                    </Button>
                   </div>
 
                   {/* Statistics */}
@@ -1150,6 +1309,60 @@ export default function DashboardPage() {
               }}
             >
               Reassign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import Guest Manifest</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="text-sm text-gray-600">
+              <p className="mb-2">This will:</p>
+              <ul className="list-disc list-inside space-y-1 text-xs">
+                <li>Delete all existing guest manifest data</li>
+                <li>Import new data from your Excel file</li>
+                <li>Reset all table assignments</li>
+              </ul>
+            </div>
+
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileSelect}
+                className="w-full text-sm"
+                disabled={importing}
+              />
+              {selectedFile && <div className="mt-2 text-sm text-green-600">Selected: {selectedFile.name}</div>}
+            </div>
+
+            <div className="text-xs text-gray-500">
+              <p className="font-medium mb-1">Required columns:</p>
+              <p>guest_name, cabin_nr, nationality, booking_number, cruise_id</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowImportDialog(false)
+                setSelectedFile(null)
+              }}
+              disabled={importing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={importGuestManifest}
+              disabled={!selectedFile || importing}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {importing ? "Importing..." : "Import & Replace Data"}
             </Button>
           </DialogFooter>
         </DialogContent>
