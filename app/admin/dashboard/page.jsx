@@ -109,6 +109,169 @@ export default function DashboardPage() {
     }
   }
 
+  // Add these functions after the existing state declarations and before useEffect
+
+  // Calculate statistics
+  const calculateStatistics = () => {
+    const totalGuests = guests.length
+    const assignedGuests = guests.filter((guest) => guest.table_nr !== null).length
+    const unassignedGuests = totalGuests - assignedGuests
+
+    // Get unique tables that have guests
+    const usedTables = new Set(guests.filter((guest) => guest.table_nr !== null).map((guest) => guest.table_nr))
+    const tablesUsed = usedTables.size
+
+    // Calculate unassigned tables (tables that exist but have no guests)
+    const totalTables = Object.keys(TABLE_CAPACITIES).length
+    const unassignedTables = totalTables - tablesUsed
+
+    // Calculate booking groups (unique booking numbers)
+    const bookingGroups = new Set(guests.map((guest) => guest.booking_number).filter(Boolean)).size
+
+    return {
+      totalGuests,
+      assignedGuests,
+      unassignedGuests,
+      tablesUsed,
+      unassignedTables,
+      bookingGroups,
+    }
+  }
+
+  // Automatic table assignment algorithm
+  const assignTablesAutomatically = async () => {
+    try {
+      setAssigningTables(true)
+      storeScrollPosition()
+      setStatusMessage(null)
+
+      // Group guests by booking number and nationality
+      const bookingGroups = {}
+
+      guests.forEach((guest) => {
+        const key = `${guest.booking_number || "unknown"}_${guest.nationality || "unknown"}`
+        if (!bookingGroups[key]) {
+          bookingGroups[key] = []
+        }
+        bookingGroups[key].push(guest)
+      })
+
+      // Sort groups by size (larger groups first)
+      const sortedGroups = Object.values(bookingGroups).sort((a, b) => b.length - a.length)
+
+      // Track table occupancy
+      const tableOccupancy = {}
+      Object.keys(TABLE_CAPACITIES).forEach((tableNum) => {
+        tableOccupancy[tableNum] = 0
+      })
+
+      // Assign groups to tables
+      const assignments = []
+
+      for (const group of sortedGroups) {
+        const groupSize = group.length
+
+        // Find the best table for this group
+        let bestTable = null
+        let bestScore = -1
+
+        for (const tableNum of Object.keys(TABLE_CAPACITIES)) {
+          const capacity = TABLE_CAPACITIES[tableNum]
+          const currentOccupancy = tableOccupancy[tableNum]
+          const availableSpace = capacity - currentOccupancy
+
+          // Skip if table can't fit the group
+          if (availableSpace < groupSize) continue
+
+          // Calculate score (prefer tables that will be more full after assignment)
+          const newOccupancy = currentOccupancy + groupSize
+          const utilizationScore = newOccupancy / capacity
+
+          if (utilizationScore > bestScore) {
+            bestScore = utilizationScore
+            bestTable = tableNum
+          }
+        }
+
+        if (bestTable) {
+          // Assign this group to the best table
+          for (const guest of group) {
+            assignments.push({
+              guestId: guest.id,
+              tableNumber: Number.parseInt(bestTable),
+            })
+          }
+          tableOccupancy[bestTable] += groupSize
+        }
+      }
+
+      // Execute the assignments
+      for (const assignment of assignments) {
+        const { error } = await supabase
+          .from("guest_manifest")
+          .update({ table_nr: assignment.tableNumber })
+          .eq("id", assignment.guestId)
+
+        if (error) {
+          console.error("Error assigning guest:", error)
+          throw error
+        }
+      }
+
+      // Refresh data
+      await fetchGuests()
+      restoreScrollPosition()
+
+      setStatusMessage({
+        type: "success",
+        message: `Successfully assigned ${assignments.length} guests to tables automatically.`,
+      })
+    } catch (error) {
+      console.error("Error in automatic assignment:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to assign tables automatically. Please try again.",
+      })
+    } finally {
+      setAssigningTables(false)
+    }
+  }
+
+  // Clear all table assignments
+  const clearAllAssignments = async () => {
+    try {
+      setAssigningTables(true)
+      storeScrollPosition()
+      setStatusMessage(null)
+
+      const { error } = await supabase.from("guest_manifest").update({ table_nr: null }).not("table_nr", "is", null)
+
+      if (error) {
+        console.error("Error clearing assignments:", error)
+        throw error
+      }
+
+      // Refresh data
+      await fetchGuests()
+      restoreScrollPosition()
+
+      setStatusMessage({
+        type: "success",
+        message: "All table assignments have been cleared successfully.",
+      })
+    } catch (error) {
+      console.error("Error clearing assignments:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to clear table assignments. Please try again.",
+      })
+    } finally {
+      setAssigningTables(false)
+    }
+  }
+
+  const statistics = calculateStatistics()
+
   // Check authentication and fetch data
   useEffect(() => {
     const isAuthenticated = clientStorage.getLocalItem("isAdminAuthenticated") === "true"
@@ -551,11 +714,7 @@ export default function DashboardPage() {
           <TabsList className="mb-6">
             <TabsTrigger value="tables" className="flex items-center gap-1">
               <Home className="h-4 w-4" />
-              Table Assignments
-            </TabsTrigger>
-            <TabsTrigger value="floor-plan" className="flex items-center gap-1">
-              <Users className="h-4 w-4" />
-              Floor Plan
+              Table Assignment System
             </TabsTrigger>
             <TabsTrigger value="daily-floor-plan" className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
@@ -568,205 +727,226 @@ export default function DashboardPage() {
           </TabsList>
 
           <TabsContent value="tables">
-            <Card>
-              <CardHeader>
-                <CardTitle>Table Assignment System</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div>
-                    <h3 className="text-lg font-medium mb-4">Assign Cabin to Table</h3>
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <label htmlFor="table-number" className="block text-sm font-medium mb-1">
-                          Table Number
-                        </label>
-                        <Input
-                          id="table-number"
-                          type="number"
-                          placeholder="Enter table number"
-                          value={newTableNumber}
-                          onChange={(e) => setNewTableNumber(e.target.value)}
-                        />
-                      </div>
-                      <div className="relative">
-                        <label htmlFor="cabin-number" className="block text-sm font-medium mb-1">
-                          Cabin Number
-                        </label>
-                        <div className="relative">
+            <div className="space-y-6">
+              {/* Control Panel */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Control Panel</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex gap-4 mb-6">
+                    <Button
+                      onClick={assignTablesAutomatically}
+                      disabled={assigningTables || loading}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2"
+                    >
+                      {assigningTables ? "Assigning..." : "Assign Tables Automatically"}
+                    </Button>
+                    <Button variant="outline" onClick={clearAllAssignments} disabled={assigningTables || loading}>
+                      Clear All Assignments
+                    </Button>
+                  </div>
+
+                  {/* Statistics */}
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                    <div className="bg-blue-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-blue-600 font-medium">Total Guests</div>
+                      <div className="text-2xl font-bold text-blue-900">{statistics.totalGuests}</div>
+                    </div>
+                    <div className="bg-green-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-green-600 font-medium">Assigned Guests</div>
+                      <div className="text-2xl font-bold text-green-900">{statistics.assignedGuests}</div>
+                    </div>
+                    <div className="bg-yellow-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-yellow-600 font-medium">Tables Used</div>
+                      <div className="text-2xl font-bold text-yellow-900">{statistics.tablesUsed}</div>
+                    </div>
+                    <div className="bg-orange-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-orange-600 font-medium">Unassigned Guests</div>
+                      <div className="text-2xl font-bold text-orange-900">{statistics.unassignedGuests}</div>
+                    </div>
+                    <div className="bg-red-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-red-600 font-medium">Unassigned Tables</div>
+                      <div className="text-2xl font-bold text-red-900">{statistics.unassignedTables}</div>
+                    </div>
+                    <div className="bg-purple-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-purple-600 font-medium">Booking Groups</div>
+                      <div className="text-2xl font-bold text-purple-900">{statistics.bookingGroups}</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Main Content Area */}
+              <div className="grid lg:grid-cols-3 gap-6">
+                {/* Floor Plan */}
+                <div className="lg:col-span-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Floor Plan</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <FloorPlan
+                        tableCapacities={TABLE_CAPACITIES}
+                        tableAssignments={tableAssignments}
+                        guests={guests}
+                        onTableUpdate={fetchGuests}
+                      />
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Add Cabin to Table */}
+                <div className="lg:col-span-1">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Add Cabin to Table</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div>
+                          <label htmlFor="table-number" className="block text-sm font-medium mb-1">
+                            Table Number
+                          </label>
                           <Input
-                            id="cabin-number"
-                            placeholder="Enter cabin number"
-                            value={newCabinNumber}
-                            onChange={(e) => {
-                              setNewCabinNumber(e.target.value)
-                              searchCabins(e.target.value)
-                              setCabinSearchOpen(true)
-                            }}
-                            onFocus={() => {
-                              if (newCabinNumber) {
-                                searchCabins(newCabinNumber)
-                                setCabinSearchOpen(true)
-                              }
-                            }}
+                            id="table-number"
+                            type="text"
+                            placeholder="e.g. 20"
+                            value={newTableNumber}
+                            onChange={(e) => setNewTableNumber(e.target.value)}
                           />
-                          {newCabinNumber && (
-                            <button
-                              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                              onClick={() => {
-                                setNewCabinNumber("")
-                                setCabinSearchOpen(false)
-                                setCabinSuggestions([])
+                        </div>
+
+                        <div className="relative">
+                          <label htmlFor="cabin-number" className="block text-sm font-medium mb-1">
+                            Cabin Number
+                          </label>
+                          <div className="relative">
+                            <Input
+                              id="cabin-number"
+                              placeholder="Select cabin..."
+                              value={newCabinNumber}
+                              onChange={(e) => {
+                                setNewCabinNumber(e.target.value)
+                                searchCabins(e.target.value)
+                                setCabinSearchOpen(true)
                               }}
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
+                              onFocus={() => {
+                                if (newCabinNumber) {
+                                  searchCabins(newCabinNumber)
+                                  setCabinSearchOpen(true)
+                                }
+                              }}
+                            />
+                            {newCabinNumber && (
+                              <button
+                                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                onClick={() => {
+                                  setNewCabinNumber("")
+                                  setCabinSearchOpen(false)
+                                  setCabinSuggestions([])
+                                }}
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Cabin search results dropdown */}
+                          {cabinSearchOpen && cabinSuggestions.length > 0 && (
+                            <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border max-h-60 overflow-auto">
+                              {cabinSuggestions.map((cabin) => (
+                                <div
+                                  key={cabin.cabin_nr}
+                                  className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-0 flex justify-between items-center"
+                                  onClick={() => handleCabinSelect(cabin)}
+                                >
+                                  <div>
+                                    <div className="font-medium">Cabin {cabin.cabin_nr}</div>
+                                    <div className="text-xs text-gray-500">
+                                      {cabin.guests.length} guests
+                                      {cabin.table_nr && (
+                                        <span className="ml-1 text-blue-600">(Table {cabin.table_nr})</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {newTableNumber && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 text-xs"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleQuickAssign(cabin)
+                                      }}
+                                    >
+                                      Assign
+                                    </Button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
 
-                        {/* Cabin search results dropdown */}
-                        {cabinSearchOpen && cabinSuggestions.length > 0 && (
-                          <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border max-h-60 overflow-auto">
-                            {cabinSuggestions.map((cabin) => (
-                              <div
-                                key={cabin.cabin_nr}
-                                className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-0 flex justify-between items-center"
-                                onClick={() => handleCabinSelect(cabin)}
-                              >
-                                <div>
-                                  <div className="font-medium">Cabin {cabin.cabin_nr}</div>
-                                  <div className="text-xs text-gray-500">
-                                    {cabin.guests.length} guests
-                                    {cabin.table_nr && (
-                                      <span className="ml-1 text-blue-600">(Table {cabin.table_nr})</span>
-                                    )}
-                                  </div>
-                                </div>
-                                {newTableNumber && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 text-xs"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleQuickAssign(cabin)
-                                    }}
-                                  >
-                                    Assign
-                                  </Button>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {selectedCabinGuests.length > 0 && (
-                      <div className="mb-4 p-3 border rounded-md bg-gray-50">
-                        <h4 className="text-sm font-medium mb-2">Selected Cabin Guests:</h4>
-                        <ul className="text-sm">
-                          {selectedCabinGuests.map((guest) => (
-                            <li key={guest.id} className="mb-1">
-                              {guest.guest_name}
-                              {guest.nationality && <span className="text-gray-500 ml-1">({guest.nationality})</span>}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    <Button
-                      onClick={() => addCabinToTable(newCabinNumber, "")}
-                      disabled={!newTableNumber || !newCabinNumber}
-                    >
-                      Assign Cabin to Table
-                    </Button>
-
-                    {/* Table preview */}
-                    {showTablePreview && (
-                      <div className="mt-4 p-3 border rounded-md bg-blue-50">
-                        <h4 className="text-sm font-medium mb-2">Current Guests at Table {newTableNumber}:</h4>
-                        {tableGuestPreview.length > 0 ? (
-                          <ul className="text-sm">
-                            {tableGuestPreview.map((guest) => (
-                              <li key={guest.id} className="mb-1">
-                                {guest.guest_name} (Cabin {guest.cabin_nr})
-                                {guest.nationality && <span className="text-gray-500 ml-1">({guest.nationality})</span>}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-sm">No guests currently assigned to this table.</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <h3 className="text-lg font-medium mb-4">Unassigned Guests</h3>
-                    <UnassignedGuests
-                      currentTableNumber={newTableNumber}
-                      onAssignGuest={(guestId, guestName, cabinNumber) => {
-                        addCabinToTable(cabinNumber, "")
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-8">
-                  <h3 className="text-lg font-medium mb-4">Current Table Assignments</h3>
-                  {tableAssignments.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {tableAssignments.map((assignment, index) => (
-                        <div key={`${assignment.table_number}-${index}`} className="border rounded-md p-3 bg-white">
-                          <div className="flex justify-between items-center mb-2">
-                            <h4 className="font-medium">Table {assignment.table_number}</h4>
-                            <span className="text-sm text-gray-500">{assignment.nationality || "Unknown"}</span>
-                          </div>
-                          <div className="text-sm">
-                            <div>
-                              Cabins:{" "}
-                              {assignment.cabins.map((cabin) => (
-                                <span
-                                  key={cabin}
-                                  className="inline-block bg-blue-100 text-blue-800 rounded-full px-2 py-0.5 text-xs mr-1 mb-1"
-                                >
-                                  {cabin}
-                                </span>
+                        {selectedCabinGuests.length > 0 && (
+                          <div className="p-3 border rounded-md bg-gray-50">
+                            <h4 className="text-sm font-medium mb-2">Selected Cabin Guests:</h4>
+                            <ul className="text-sm">
+                              {selectedCabinGuests.map((guest) => (
+                                <li key={guest.id} className="mb-1">
+                                  {guest.guest_name}
+                                  {guest.nationality && (
+                                    <span className="text-gray-500 ml-1">({guest.nationality})</span>
+                                  )}
+                                </li>
                               ))}
-                            </div>
-                            {assignment.booking_number && assignment.booking_number !== "Unknown" && (
-                              <div className="text-gray-500 mt-1">Booking: {assignment.booking_number}</div>
+                            </ul>
+                          </div>
+                        )}
+
+                        <Button
+                          onClick={() => addCabinToTable(newCabinNumber, "")}
+                          disabled={!newTableNumber || !newCabinNumber}
+                          className="w-full bg-blue-100 text-blue-700 hover:bg-blue-200"
+                        >
+                          Add Cabin to Table
+                        </Button>
+
+                        {/* Table preview */}
+                        {showTablePreview && (
+                          <div className="p-3 border rounded-md bg-blue-50">
+                            <h4 className="text-sm font-medium mb-2">Current Guests at Table {newTableNumber}:</h4>
+                            {tableGuestPreview.length > 0 ? (
+                              <ul className="text-sm">
+                                {tableGuestPreview.map((guest) => (
+                                  <li key={guest.id} className="mb-1">
+                                    {guest.guest_name} (Cabin {guest.cabin_nr})
+                                    {guest.nationality && (
+                                      <span className="text-gray-500 ml-1">({guest.nationality})</span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-sm">No guests currently assigned to this table.</p>
                             )}
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-gray-500">
-                      No table assignments yet. Use the form above to assign cabins to tables.
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
 
-          <TabsContent value="floor-plan">
-            <Card>
-              <CardHeader>
-                <CardTitle>Floor Plan</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <FloorPlan
-                  tableCapacities={TABLE_CAPACITIES}
-                  tableAssignments={tableAssignments}
-                  guests={guests}
-                  onTableUpdate={fetchGuests}
-                />
-              </CardContent>
-            </Card>
+                  {/* Unassigned Guests */}
+                  <UnassignedGuests
+                    currentTableNumber={newTableNumber}
+                    onAssignGuest={(guestId, guestName, cabinNumber) => {
+                      addCabinToTable(cabinNumber, "")
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
           </TabsContent>
 
           <TabsContent value="daily-floor-plan">
