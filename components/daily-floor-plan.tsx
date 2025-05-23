@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -9,39 +9,39 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Search, Filter, Printer, Calendar, Users, ChefHat } from "lucide-react"
 
-// Updated table positions to match the new floor plan layout - moved tables 14, 15, 16 further right
+// Updated table positions with larger sizes to accommodate more information
 const TABLE_POSITIONS = {
-  // Row 1 - Top row
-  1: { x: 50, y: 30, width: 100, height: 80, shape: "rect" },
-  9: { x: 200, y: 30, width: 80, height: 80, shape: "circle" },
-  10: { x: 330, y: 30, width: 80, height: 80, shape: "circle" },
-  20: { x: 460, y: 30, width: 100, height: 80, shape: "rect" },
+  // Row 1 - Top row (increased sizes)
+  1: { x: 40, y: 30, width: 120, height: 100, shape: "rect" },
+  9: { x: 190, y: 30, width: 100, height: 100, shape: "circle" },
+  10: { x: 320, y: 30, width: 100, height: 100, shape: "circle" },
+  20: { x: 450, y: 30, width: 120, height: 100, shape: "rect" },
 
-  // Row 2
-  2: { x: 50, y: 130, width: 120, height: 60, shape: "rect" },
-  8: { x: 200, y: 130, width: 80, height: 80, shape: "circle" },
-  11: { x: 330, y: 130, width: 80, height: 80, shape: "circle" },
-  19: { x: 460, y: 130, width: 120, height: 60, shape: "rect" },
+  // Row 2 (increased sizes)
+  2: { x: 40, y: 150, width: 140, height: 80, shape: "rect" },
+  8: { x: 190, y: 150, width: 100, height: 100, shape: "circle" },
+  11: { x: 320, y: 150, width: 100, height: 100, shape: "circle" },
+  19: { x: 450, y: 150, width: 140, height: 80, shape: "rect" },
 
-  // Row 3
-  3: { x: 50, y: 230, width: 120, height: 60, shape: "rect" },
-  7: { x: 200, y: 230, width: 100, height: 80, shape: "rect" },
-  12: { x: 330, y: 230, width: 100, height: 80, shape: "rect" },
-  18: { x: 460, y: 230, width: 120, height: 60, shape: "rect" },
+  // Row 3 (increased sizes)
+  3: { x: 40, y: 270, width: 140, height: 80, shape: "rect" },
+  7: { x: 190, y: 270, width: 120, height: 100, shape: "rect" },
+  12: { x: 320, y: 270, width: 120, height: 100, shape: "rect" },
+  18: { x: 450, y: 270, width: 140, height: 80, shape: "rect" },
 
-  // Row 4
-  4: { x: 50, y: 330, width: 100, height: 80, shape: "rect" },
-  6: { x: 200, y: 330, width: 120, height: 60, shape: "rect" },
-  13: { x: 330, y: 330, width: 80, height: 80, shape: "circle" },
-  17: { x: 460, y: 330, width: 120, height: 60, shape: "rect" },
+  // Row 4 (increased sizes)
+  4: { x: 40, y: 390, width: 120, height: 100, shape: "rect" },
+  6: { x: 190, y: 390, width: 140, height: 80, shape: "rect" },
+  13: { x: 320, y: 390, width: 100, height: 100, shape: "circle" },
+  17: { x: 450, y: 390, width: 140, height: 80, shape: "rect" },
 
-  // Row 5 - Bottom row (moved further right)
-  14: { x: 180, y: 430, width: 120, height: 60, shape: "rect" },
-  15: { x: 330, y: 430, width: 120, height: 60, shape: "rect" }, // Fixed to rect for 6 guests
-  16: { x: 480, y: 430, width: 100, height: 80, shape: "rect" },
+  // Row 5 - Bottom row (increased sizes and repositioned)
+  14: { x: 170, y: 510, width: 140, height: 80, shape: "rect" },
+  15: { x: 320, y: 510, width: 140, height: 80, shape: "rect" },
+  16: { x: 470, y: 510, width: 120, height: 100, shape: "rect" },
 }
 
-// Day mapping - updated to use day names instead of numbers
+// Day mapping
 const DAY_MAPPING = {
   sunday: 2,
   monday: 3,
@@ -70,14 +70,52 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
   const [kitchenSummary, setKitchenSummary] = useState({})
   const [mealSelections, setMealSelections] = useState({})
   const [menuItems, setMenuItems] = useState([])
+  const [tableData, setTableData] = useState({})
   const supabase = createClientComponentClient()
 
-  // Fetch meal selections and menu items for the selected day
-  useEffect(() => {
-    fetchMealData()
-  }, [selectedDay, guests])
+  // Enhanced meal categorization function
+  const getMealCategory = useCallback((mealId, menuItems) => {
+    const meal = menuItems.find((item) => item.id === mealId)
+    if (!meal) return "noSelection"
 
-  const fetchMealData = async () => {
+    // Check meal_type first
+    const mealType = meal.meal_type?.toLowerCase() || ""
+
+    if (
+      mealType.includes("meat") ||
+      mealType.includes("beef") ||
+      mealType.includes("pork") ||
+      mealType.includes("chicken") ||
+      mealType.includes("lamb")
+    ) {
+      return "meat"
+    } else if (mealType.includes("fish") || mealType.includes("salmon") || mealType.includes("seafood")) {
+      return "fish"
+    } else if (mealType.includes("vegetarian") || mealType.includes("vegan") || mealType.includes("veggie")) {
+      return "vegetarian"
+    }
+
+    // Fallback to meal name analysis
+    const mealName = meal.name_en?.toLowerCase() || ""
+    if (
+      mealName.includes("beef") ||
+      mealName.includes("chicken") ||
+      mealName.includes("pork") ||
+      mealName.includes("lamb") ||
+      mealName.includes("meat")
+    ) {
+      return "meat"
+    } else if (mealName.includes("fish") || mealName.includes("salmon") || mealName.includes("seafood")) {
+      return "fish"
+    } else if (mealName.includes("vegetarian") || mealName.includes("vegan") || mealName.includes("veggie")) {
+      return "vegetarian"
+    }
+
+    return "other"
+  }, [])
+
+  // Enhanced data fetching with proper meal categorization
+  const fetchMealData = useCallback(async () => {
     try {
       const dayNumber = DAY_MAPPING[selectedDay]
 
@@ -108,123 +146,142 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
             meal_id: selection.meal_id,
             meal_name: selection.meal_name,
             meal_category: selection.meal_category,
+            category: getMealCategory(selection.meal_id, menuData || []),
           }
         })
       }
 
       setMealSelections(guestMealSelections)
 
-      // Create enhanced meal data with guest info and meal selections
+      // Process table data
+      const tables = {}
+      const summary = {
+        totalGuests: guests.length,
+        meat: 0,
+        fish: 0,
+        vegetarian: 0,
+        other: 0,
+        noSelection: 0,
+        mealBreakdown: {},
+      }
+
+      // Group guests by table
+      guests.forEach((guest) => {
+        if (!guest.table_nr) return
+
+        if (!tables[guest.table_nr]) {
+          tables[guest.table_nr] = {
+            cabins: {},
+            mealCounts: { meat: 0, fish: 0, vegetarian: 0, other: 0, noSelection: 0 },
+            totalGuests: 0,
+          }
+        }
+
+        // Add cabin to table
+        const cabinNr = guest.cabin_nr
+        if (!tables[guest.table_nr].cabins[cabinNr]) {
+          tables[guest.table_nr].cabins[cabinNr] = {
+            guests: [],
+            mealCounts: { meat: 0, fish: 0, vegetarian: 0, other: 0, noSelection: 0 },
+          }
+        }
+
+        // Get meal selection for this guest
+        const mealSelection = guestMealSelections[guest.id]
+        const category = mealSelection?.category || "noSelection"
+
+        // Update counts
+        tables[guest.table_nr].cabins[cabinNr].guests.push({
+          id: guest.id,
+          name: guest.guest_name,
+          mealSelection,
+        })
+
+        // Update table meal counts
+        tables[guest.table_nr].mealCounts[category]++
+        tables[guest.table_nr].totalGuests++
+
+        // Update overall summary
+        summary[category]++
+
+        // Update meal breakdown
+        if (mealSelection?.meal_name) {
+          summary.mealBreakdown[mealSelection.meal_name] = (summary.mealBreakdown[mealSelection.meal_name] || 0) + 1
+        }
+      })
+
+      setTableData(tables)
+      setKitchenSummary(summary)
+
+      // Create enhanced meal data for guest list
       const enhancedMealData = guests.map((guest) => {
         const mealSelection = guestMealSelections[guest.id]
         return {
           ...guest,
           meal_day: selectedDay,
           meal_selection: mealSelection || null,
-          meal_category: mealSelection ? getMealCategory(mealSelection.meal_id, menuData || []) : null,
+          meal_category: mealSelection ? mealSelection.category : null,
         }
       })
 
       setMealData(enhancedMealData)
-      calculateKitchenSummary(enhancedMealData, menuData || [])
     } catch (error) {
       console.error("Error fetching meal data:", error)
     }
-  }
+  }, [selectedDay, guests, supabase, getMealCategory])
 
-  // Determine meal category (meat/fish/vegetarian) based on meal_type
-  const getMealCategory = (mealId, menuItems) => {
-    const meal = menuItems.find((item) => item.id === mealId)
-    if (!meal) return "No Selection"
+  // Set up real-time subscriptions
+  useEffect(() => {
+    fetchMealData()
 
-    // Map meal_type to categories
-    const mealType = meal.meal_type?.toLowerCase() || ""
+    // Subscribe to meal_selections changes
+    const mealSubscription = supabase
+      .channel("meal_selections_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "meal_selections",
+        },
+        (payload) => {
+          console.log("Meal selection change received:", payload)
+          fetchMealData()
+        },
+      )
+      .subscribe()
 
-    if (
-      mealType.includes("meat") ||
-      mealType.includes("beef") ||
-      mealType.includes("pork") ||
-      mealType.includes("chicken") ||
-      mealType.includes("lamb")
-    ) {
-      return "Meat"
-    } else if (mealType.includes("fish") || mealType.includes("salmon") || mealType.includes("seafood")) {
-      return "Fish"
-    } else if (mealType.includes("vegetarian") || mealType.includes("vegan") || mealType.includes("veggie")) {
-      return "Vegetarian"
-    } else {
-      // Default categorization based on meal name if meal_type is not clear
-      const mealName = meal.name_en?.toLowerCase() || ""
-      if (
-        mealName.includes("beef") ||
-        mealName.includes("chicken") ||
-        mealName.includes("pork") ||
-        mealName.includes("lamb") ||
-        mealName.includes("meat")
-      ) {
-        return "Meat"
-      } else if (mealName.includes("fish") || mealName.includes("salmon") || mealName.includes("seafood")) {
-        return "Fish"
-      } else if (mealName.includes("vegetarian") || mealName.includes("vegan") || mealName.includes("veggie")) {
-        return "Vegetarian"
-      }
+    // Subscribe to guest_manifest changes
+    const guestSubscription = supabase
+      .channel("guest_manifest_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "guest_manifest",
+        },
+        (payload) => {
+          console.log("Guest manifest change received:", payload)
+          fetchMealData()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      mealSubscription.unsubscribe()
+      guestSubscription.unsubscribe()
     }
-
-    return "Other"
-  }
-
-  const calculateKitchenSummary = (data, menuItems) => {
-    const summary = {
-      totalGuests: data.length,
-      meat: 0,
-      fish: 0,
-      vegetarian: 0,
-      other: 0,
-      noSelection: 0,
-      mealBreakdown: {},
-    }
-
-    data.forEach((guest) => {
-      if (guest.meal_selection) {
-        const category = getMealCategory(guest.meal_selection.meal_id, menuItems)
-
-        switch (category) {
-          case "Meat":
-            summary.meat++
-            break
-          case "Fish":
-            summary.fish++
-            break
-          case "Vegetarian":
-            summary.vegetarian++
-            break
-          case "Other":
-            summary.other++
-            break
-          default:
-            summary.noSelection++
-        }
-
-        // Count specific meals
-        const mealName = guest.meal_selection.meal_name
-        if (mealName) {
-          summary.mealBreakdown[mealName] = (summary.mealBreakdown[mealName] || 0) + 1
-        }
-      } else {
-        summary.noSelection++
-      }
-    })
-
-    setKitchenSummary(summary)
-  }
+  }, [fetchMealData])
 
   // Get table color based on meal completion status
   const getTableMealColor = (tableNumber) => {
-    const tableGuests = mealData.filter((guest) => guest.table_nr === tableNumber)
-    if (tableGuests.length === 0) return "rgb(239, 246, 255)" // Empty
+    const tableInfo = tableData[tableNumber]
+    if (!tableInfo || tableInfo.totalGuests === 0) return "rgb(239, 246, 255)" // Empty
 
-    const completedSelections = tableGuests.filter((guest) => guest.meal_selection).length
-    const completionRate = completedSelections / tableGuests.length
+    const { meat, fish, vegetarian, other, noSelection } = tableInfo.mealCounts
+    const completedSelections = meat + fish + vegetarian + other
+    const completionRate = completedSelections / tableInfo.totalGuests
 
     if (completionRate === 1) return "rgb(34, 197, 94)" // Green - all complete
     if (completionRate >= 0.5) return "rgb(251, 191, 36)" // Yellow - partial
@@ -232,24 +289,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
     return "rgb(239, 68, 68)" // Red - no selections
   }
 
-  // Get table guests with their cabin numbers and meal choices
-  const getTableGuestsInfo = (tableNumber) => {
-    const tableGuests = mealData.filter((guest) => guest.table_nr === tableNumber)
-
-    // Group by cabin
-    const cabinGroups = {}
-    tableGuests.forEach((guest) => {
-      const cabin = guest.cabin_nr || "Unknown"
-      if (!cabinGroups[cabin]) {
-        cabinGroups[cabin] = []
-      }
-      cabinGroups[cabin].push(guest)
-    })
-
-    return cabinGroups
-  }
-
-  // Render tables with meal status and cabin/meal info
+  // Enhanced table rendering with cabin numbers and meal counts
   const renderMealTables = () => {
     const tables = []
     const tableNumbers = Object.keys(TABLE_POSITIONS)
@@ -258,8 +298,12 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
       const tableNumber = tableNumbers[i]
       const position = TABLE_POSITIONS[tableNumber]
       const tableNum = Number.parseInt(tableNumber, 10)
-      const cabinGroups = getTableGuestsInfo(tableNum)
-      const totalGuests = Object.values(cabinGroups).flat().length
+      const tableInfo = tableData[tableNum] || {
+        cabins: {},
+        mealCounts: { meat: 0, fish: 0, vegetarian: 0, other: 0, noSelection: 0 },
+        totalGuests: 0,
+      }
+      const cabins = Object.keys(tableInfo.cabins)
 
       // Render table shape
       if (position.shape === "rect") {
@@ -293,42 +337,28 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
         )
       }
 
-      // Add table number
+      // Add table number (simplified - just the number)
       tables.push(
         <text
           key={`table-${tableNumber}`}
           x={position.x + position.width / 2}
-          y={position.y + 15}
+          y={position.y + 18}
           textAnchor="middle"
           dominantBaseline="middle"
           fill="white"
           fontWeight="bold"
-          fontSize="14"
+          fontSize="16"
           className="select-none"
         >
-          Table {tableNumber}
+          {tableNumber}
         </text>,
       )
 
-      // Add cabin numbers and meal info
-      if (totalGuests > 0) {
-        const cabinNumbers = Object.keys(cabinGroups)
-        let yOffset = 25
+      if (tableInfo.totalGuests > 0) {
+        let yOffset = 35
 
-        // Show cabin numbers
-        cabinNumbers.slice(0, 3).forEach((cabin, index) => {
-          const cabinGuests = cabinGroups[cabin]
-          const mealCategories = cabinGuests.map((guest) => {
-            if (guest.meal_selection) {
-              return getMealCategory(guest.meal_selection.meal_id, menuItems)
-            }
-            return "None"
-          })
-
-          // Get unique meal categories for this cabin
-          const uniqueCategories = [...new Set(mealCategories)].filter((cat) => cat !== "None")
-          const categoryText = uniqueCategories.length > 0 ? uniqueCategories.join("/") : "No meal"
-
+        // Show cabin numbers (limit to first 4 cabins to avoid overcrowding)
+        cabins.slice(0, 4).forEach((cabin, index) => {
           tables.push(
             <text
               key={`cabin-${tableNumber}-${cabin}`}
@@ -337,33 +367,17 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
               textAnchor="middle"
               dominantBaseline="middle"
               fill="white"
-              fontSize="10"
+              fontSize="11"
               className="select-none"
             >
               Cabin {cabin}
             </text>,
           )
-
-          tables.push(
-            <text
-              key={`meal-${tableNumber}-${cabin}`}
-              x={position.x + position.width / 2}
-              y={position.y + yOffset + 12}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="white"
-              fontSize="8"
-              className="select-none"
-            >
-              {categoryText}
-            </text>,
-          )
-
-          yOffset += 25
+          yOffset += 14
         })
 
-        // If more than 3 cabins, show "..."
-        if (cabinNumbers.length > 3) {
+        // If more than 4 cabins, show "..."
+        if (cabins.length > 4) {
           tables.push(
             <text
               key={`more-${tableNumber}`}
@@ -375,10 +389,36 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
               fontSize="10"
               className="select-none"
             >
-              +{cabinNumbers.length - 3} more
+              +{cabins.length - 4} more
             </text>,
           )
+          yOffset += 14
         }
+
+        // Show meal summary at bottom
+        const { meat, fish, vegetarian } = tableInfo.mealCounts
+        const mealSummaryParts = []
+        if (meat > 0) mealSummaryParts.push(`${meat}M`)
+        if (fish > 0) mealSummaryParts.push(`${fish}F`)
+        if (vegetarian > 0) mealSummaryParts.push(`${vegetarian}V`)
+
+        const mealSummaryText = mealSummaryParts.length > 0 ? mealSummaryParts.join(" ") : "No meals"
+
+        tables.push(
+          <text
+            key={`meal-summary-${tableNumber}`}
+            x={position.x + position.width / 2}
+            y={position.y + position.height - 8}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="white"
+            fontSize="10"
+            fontWeight="medium"
+            className="select-none"
+          >
+            {mealSummaryText}
+          </text>,
+        )
       } else {
         // Empty table
         tables.push(
@@ -389,7 +429,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
             textAnchor="middle"
             dominantBaseline="middle"
             fill="white"
-            fontSize="10"
+            fontSize="11"
             className="select-none"
           >
             Empty
@@ -441,7 +481,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
 
   return (
     <div className="space-y-6">
-      {/* Day Selection Tabs - Updated with day names */}
+      {/* Day Selection Tabs */}
       <Tabs value={selectedDay} onValueChange={setSelectedDay}>
         <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="sunday">Sunday</TabsTrigger>
@@ -453,7 +493,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
         </TabsList>
 
         <TabsContent value={selectedDay} className="space-y-6">
-          {/* Kitchen Prep Summary - Updated with meat/fish/vegetarian */}
+          {/* Enhanced Kitchen Prep Summary */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -502,7 +542,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
             </CardContent>
           </Card>
 
-          {/* Floor Plan with Meal Status and Cabin Info */}
+          {/* Enhanced Floor Plan */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -516,38 +556,42 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
             </CardHeader>
             <CardContent>
               <div className="border rounded-lg overflow-hidden mb-4">
-                <svg width="100%" height="580" viewBox="0 0 650 580" className="bg-white">
-                  <rect x="0" y="0" width="650" height="580" fill="white" />
+                <svg width="100%" height="620" viewBox="0 0 650 620" className="bg-white">
+                  <rect x="0" y="0" width="650" height="620" fill="white" />
                   {renderMealTables()}
 
-                  {/* Updated Legend - smaller and positioned in bottom left */}
-                  <g transform="translate(20, 480)">
-                    <text x="0" y="0" fontWeight="medium" fontSize="11" fill="rgb(75, 85, 99)">
+                  {/* Enhanced Legend */}
+                  <g transform="translate(20, 520)">
+                    <text x="0" y="0" fontWeight="medium" fontSize="12" fill="rgb(75, 85, 99)">
                       Meal Selection Status:
                     </text>
                     <circle cx="8" cy="18" r="5" fill="rgb(34, 197, 94)" />
-                    <text x="18" y="22" fontSize="10" fill="rgb(75, 85, 99)">
+                    <text x="18" y="22" fontSize="11" fill="rgb(75, 85, 99)">
                       All meals selected
                     </text>
 
                     <circle cx="8" cy="35" r="5" fill="rgb(251, 191, 36)" />
-                    <text x="18" y="39" fontSize="10" fill="rgb(75, 85, 99)">
+                    <text x="18" y="39" fontSize="11" fill="rgb(75, 85, 99)">
                       Most meals selected
                     </text>
 
                     <circle cx="8" cy="52" r="5" fill="rgb(249, 115, 22)" />
-                    <text x="18" y="56" fontSize="10" fill="rgb(75, 85, 99)">
+                    <text x="18" y="56" fontSize="11" fill="rgb(75, 85, 99)">
                       Some meals selected
                     </text>
 
                     <circle cx="8" cy="69" r="5" fill="rgb(239, 68, 68)" />
-                    <text x="18" y="73" fontSize="10" fill="rgb(75, 85, 99)">
+                    <text x="18" y="73" fontSize="11" fill="rgb(75, 85, 99)">
                       No meals selected
                     </text>
 
-                    <circle cx="150" cy="18" r="5" fill="rgb(239, 246, 255)" />
-                    <text x="160" y="22" fontSize="10" fill="rgb(75, 85, 99)">
+                    <circle cx="200" cy="18" r="5" fill="rgb(239, 246, 255)" />
+                    <text x="210" y="22" fontSize="11" fill="rgb(75, 85, 99)">
                       No guests assigned
+                    </text>
+
+                    <text x="200" y="45" fontSize="11" fill="rgb(75, 85, 99)" fontWeight="medium">
+                      Meal codes: M=Meat, F=Fish, V=Vegetarian
                     </text>
                   </g>
                 </svg>
@@ -555,7 +599,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
             </CardContent>
           </Card>
 
-          {/* Search and Filter Section */}
+          {/* Enhanced Guest List */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -606,7 +650,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
                 </select>
               </div>
 
-              {/* Guest List Table - Updated with meal categories */}
+              {/* Enhanced Guest List Table */}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50">
@@ -622,9 +666,7 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
                   <tbody className="divide-y">
                     {getFilteredAndSortedGuests().map((guest) => {
                       const hasSelection = guest.meal_selection !== null
-                      const mealCategory = guest.meal_selection
-                        ? getMealCategory(guest.meal_selection.meal_id, menuItems)
-                        : "No Selection"
+                      const mealCategory = guest.meal_selection?.category || "No Selection"
 
                       return (
                         <tr key={guest.id} className={hasSelection ? "bg-green-50" : "bg-red-50"}>
@@ -635,16 +677,24 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
                             <Badge
                               variant={mealCategory === "No Selection" ? "destructive" : "default"}
                               className={
-                                mealCategory === "Meat"
+                                mealCategory === "meat"
                                   ? "bg-red-100 text-red-800"
-                                  : mealCategory === "Fish"
+                                  : mealCategory === "fish"
                                     ? "bg-blue-100 text-blue-800"
-                                    : mealCategory === "Vegetarian"
+                                    : mealCategory === "vegetarian"
                                       ? "bg-green-100 text-green-800"
                                       : ""
                               }
                             >
-                              {mealCategory}
+                              {mealCategory === "meat"
+                                ? "Meat"
+                                : mealCategory === "fish"
+                                  ? "Fish"
+                                  : mealCategory === "vegetarian"
+                                    ? "Vegetarian"
+                                    : mealCategory === "other"
+                                      ? "Other"
+                                      : "No Selection"}
                             </Badge>
                           </td>
                           <td className="px-3 py-2">

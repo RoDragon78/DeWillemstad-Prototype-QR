@@ -180,7 +180,10 @@ export default function DashboardPage() {
         let bestTable = null
         let bestScore = -1
 
-        for (const tableNum of Object.keys(TABLE_CAPACITIES)) {
+        // Sort table numbers in descending order to start from table 20
+        const sortedTableNumbers = Object.keys(TABLE_CAPACITIES).sort((a, b) => Number(b) - Number(a))
+
+        for (const tableNum of sortedTableNumbers) {
           const capacity = TABLE_CAPACITIES[tableNum]
           const currentOccupancy = tableOccupancy[tableNum]
           const availableSpace = capacity - currentOccupancy
