@@ -1,0 +1,159 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { User, Search } from "lucide-react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+
+interface UnassignedGuestsProps {
+  currentTableNumber: string | null
+  onAssignGuest: (guestId: string, guestName: string, cabinNumber: string) => void
+}
+
+export function UnassignedGuests({ currentTableNumber, onAssignGuest }: UnassignedGuestsProps) {
+  const [unassignedGuests, setUnassignedGuests] = useState<any[]>([])
+  const [filteredGuests, setFilteredGuests] = useState<any[]>([])
+  const [searchTerm, setSearchTerm] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
+  const supabase = createClientComponentClient()
+
+  // Fetch unassigned guests
+  useEffect(() => {
+    async function fetchUnassignedGuests() {
+      try {
+        setIsLoading(true)
+        const { data, error } = await supabase
+          .from("guest_manifest")
+          .select("*")
+          .is("table_nr", null)
+          .order("cabin_nr", { ascending: true })
+          .order("guest_name", { ascending: true })
+
+        if (error) {
+          console.error("Error fetching unassigned guests:", error)
+          return
+        }
+
+        setUnassignedGuests(data || [])
+        setFilteredGuests(data || [])
+      } catch (error) {
+        console.error("Error in fetchUnassignedGuests:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchUnassignedGuests()
+
+    // Set up real-time subscription
+    const subscription = supabase
+      .channel("unassigned_guests_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "guest_manifest",
+        },
+        () => {
+          fetchUnassignedGuests()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [supabase])
+
+  // Filter guests when search term changes
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredGuests(unassignedGuests)
+      return
+    }
+
+    const lowerSearchTerm = searchTerm.toLowerCase()
+    const filtered = unassignedGuests.filter(
+      (guest) =>
+        guest.guest_name?.toLowerCase().includes(lowerSearchTerm) ||
+        guest.cabin_nr?.toLowerCase().includes(lowerSearchTerm) ||
+        guest.nationality?.toLowerCase().includes(lowerSearchTerm),
+    )
+    setFilteredGuests(filtered)
+  }, [searchTerm, unassignedGuests])
+
+  // Group guests by cabin
+  const groupedGuests = filteredGuests.reduce(
+    (acc, guest) => {
+      const cabinNr = guest.cabin_nr || "Unknown"
+      if (!acc[cabinNr]) {
+        acc[cabinNr] = []
+      }
+      acc[cabinNr].push(guest)
+      return acc
+    },
+    {} as Record<string, any[]>,
+  )
+
+  if (isLoading) {
+    return <div className="text-center py-4 text-gray-500">Loading unassigned guests...</div>
+  }
+
+  return (
+    <div className="mt-4 border rounded-lg p-3 bg-gray-50">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-medium">Unassigned Guests</h3>
+        <Badge variant="outline" className="bg-orange-50 text-orange-700">
+          {unassignedGuests.length} guests
+        </Badge>
+      </div>
+
+      <div className="relative mb-2">
+        <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Input
+          placeholder="Search guests..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-8 text-sm"
+        />
+      </div>
+
+      <div className="max-h-48 overflow-y-auto pr-1">
+        {Object.keys(groupedGuests).length > 0 ? (
+          Object.entries(groupedGuests).map(([cabinNr, cabinGuests]) => (
+            <div key={cabinNr} className="mb-2">
+              <div className="text-xs font-medium text-gray-500 mb-1">Cabin {cabinNr}</div>
+              <div className="space-y-1">
+                {cabinGuests.map((guest) => (
+                  <div key={guest.id} className="flex items-center justify-between bg-white p-2 rounded border text-sm">
+                    <div className="flex items-center">
+                      <User className="h-3 w-3 mr-1 text-gray-400" />
+                      <span>{guest.guest_name || "Unknown"}</span>
+                      {guest.nationality && <span className="ml-1 text-xs text-gray-500">({guest.nationality})</span>}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs"
+                      disabled={!currentTableNumber}
+                      onClick={() => onAssignGuest(guest.id, guest.guest_name, guest.cabin_nr)}
+                    >
+                      Assign
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="text-center py-4 text-gray-500 text-sm">
+            {searchTerm ? "No matching unassigned guests found." : "All guests are assigned to tables."}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

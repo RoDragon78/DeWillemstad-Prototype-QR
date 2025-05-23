@@ -108,6 +108,9 @@ export function FloorPlan(props) {
     try {
       setRemovingGuest(true)
 
+      // Store scroll position before update
+      const scrollPosition = tableGuestsRef.current ? tableGuestsRef.current.scrollTop : 0
+
       const { error } = await supabase.from("guest_manifest").update({ table_nr: null }).eq("id", guestId)
 
       if (error) {
@@ -116,13 +119,15 @@ export function FloorPlan(props) {
       }
 
       // Refresh the table guests
-      fetchTableGuests(selectedTable)
+      await fetchTableGuests(selectedTable)
 
-      // Scroll back to position after state update
+      // Restore scroll position after state update and DOM rendering
       if (tableGuestsRef.current) {
-        setTimeout(() => {
-          tableGuestsRef.current.scrollIntoView({ behavior: "auto", block: "nearest" })
-        }, 100)
+        requestAnimationFrame(() => {
+          if (tableGuestsRef.current) {
+            tableGuestsRef.current.scrollTop = scrollPosition
+          }
+        })
       }
 
       // Notify parent component to refresh all data

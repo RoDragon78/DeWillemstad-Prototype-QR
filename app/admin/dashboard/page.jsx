@@ -23,6 +23,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 
+// 1. Update the imports to include our new UnassignedGuests component
+import { UnassignedGuests } from "@/components/unassigned-guests"
+
 // Table capacity configuration based on the floor plan - removed tables 5 and 15
 const TABLE_CAPACITIES = {
   1: 4,
@@ -167,7 +170,7 @@ export default function DashboardPage() {
     }
   }
 
-  // Add function to handle cabin selection
+  // 2. Modify the handleCabinSelect function to fix the greyed out issue
   const handleCabinSelect = async (cabin) => {
     setNewCabinNumber(cabin.cabin_nr)
     setSelectedCabinGuests(cabin.guests)
@@ -766,6 +769,73 @@ export default function DashboardPage() {
     }
   }
 
+  // 3. Add a new function to assign individual guests to a table
+  const assignIndividualGuest = async (guestId, guestName, cabinNumber) => {
+    try {
+      if (!newTableNumber) {
+        setStatusMessage({
+          type: "error",
+          message: "Please enter a table number first.",
+        })
+        return
+      }
+
+      const tableNumber = Number.parseInt(newTableNumber, 10)
+
+      // Validate table number
+      if (!TABLE_CAPACITIES[tableNumber]) {
+        setStatusMessage({
+          type: "error",
+          message: `Table ${tableNumber} does not exist.`,
+        })
+        return
+      }
+
+      // Check if the table has enough capacity
+      let currentTableGuestCount = 0
+      for (let i = 0; i < guests.length; i++) {
+        if (guests[i].table_nr === tableNumber) {
+          currentTableGuestCount++
+        }
+      }
+
+      if (currentTableGuestCount + 1 > TABLE_CAPACITIES[tableNumber]) {
+        setStatusMessage({
+          type: "error",
+          message: `Table ${tableNumber} does not have enough capacity for additional guests.`,
+        })
+        return
+      }
+
+      // Update the guest
+      const { error: updateError } = await supabase
+        .from("guest_manifest")
+        .update({ table_nr: tableNumber })
+        .eq("id", guestId)
+
+      if (updateError) {
+        console.error("Error updating guest:", updateError)
+        throw updateError
+      }
+
+      // Refresh data
+      await fetchGuests()
+
+      setStatusMessage({
+        type: "success",
+        message: `Guest ${guestName} from cabin ${cabinNumber} has been assigned to table ${tableNumber}.`,
+      })
+    } catch (error) {
+      console.error("Error assigning guest to table:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to assign guest to table. Please try again.",
+      })
+      // Refresh data to ensure consistency
+      fetchGuests()
+    }
+  }
+
   // Handle confirmation dialog for reassigning cabin
   const handleConfirmReassign = async () => {
     if (cabinToReassign) {
@@ -776,7 +846,7 @@ export default function DashboardPage() {
     }
   }
 
-  // Remove a single guest from a table
+  // 4. Modify the removeGuestFromTable function to preserve scroll position
   const removeGuestFromTable = async (guestId) => {
     try {
       setRemovingGuest(true)
@@ -784,6 +854,9 @@ export default function DashboardPage() {
         type: "info",
         message: "Removing guest from table...",
       })
+
+      // Store scroll position before update
+      const scrollPosition = tableGuestsRef.current ? tableGuestsRef.current.scrollTop : 0
 
       const { error: updateError } = await supabase.from("guest_manifest").update({ table_nr: null }).eq("id", guestId)
 
@@ -795,11 +868,13 @@ export default function DashboardPage() {
       // Refresh the data while maintaining scroll position
       await fetchGuests()
 
-      // Scroll back to position after state update
+      // Restore scroll position after state update and DOM rendering
       if (tableGuestsRef.current) {
-        setTimeout(() => {
-          tableGuestsRef.current.scrollIntoView({ behavior: "auto", block: "nearest" })
-        }, 100)
+        requestAnimationFrame(() => {
+          if (tableGuestsRef.current) {
+            tableGuestsRef.current.scrollTop = scrollPosition
+          }
+        })
       }
 
       setStatusMessage({
@@ -1018,22 +1093,20 @@ export default function DashboardPage() {
               <p className="text-sm text-blue-600 font-medium">Total Guests</p>
               <p className="text-2xl font-bold">{totalGuests}</p>
             </div>
-
             <div className="bg-green-50 p-3 rounded-lg border border-green-100">
               <p className="text-sm text-green-600 font-medium">Assigned Guests</p>
               <p className="text-2xl font-bold">{assignedGuests}</p>
             </div>
-
             <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
               <p className="text-sm text-amber-600 font-medium">Tables Used</p>
               <p className="text-2xl font-bold">{tablesUsed}</p>
             </div>
-
+            // Update the dashboard metrics to include unassigned guests count // Find the metrics section with the grid
+            of stats and update the unassigned guests card:
             <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
               <p className="text-sm text-orange-600 font-medium">Unassigned Guests</p>
               <p className="text-2xl font-bold">{unassignedGuests}</p>
             </div>
-
             <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
               <p className="text-sm text-purple-600 font-medium">Booking Groups</p>
               <p className="text-2xl font-bold">{bookingGroups}</p>
@@ -1140,16 +1213,19 @@ export default function DashboardPage() {
                                 <CommandEmpty>No cabins found.</CommandEmpty>
                                 <CommandGroup>
                                   {cabinSuggestions.map((cabin) => (
+                                    // 5. Update the CommandItem styling in the cabin search to make it more clickable
                                     <CommandItem
                                       key={cabin.cabin_nr}
                                       value={cabin.cabin_nr}
                                       onSelect={() => handleCabinSelect(cabin)}
-                                      className="flex justify-between items-center cursor-pointer"
+                                      className="flex justify-between items-center cursor-pointer hover:bg-blue-50 active:bg-blue-100 transition-colors"
                                     >
                                       <div className="flex items-center">
                                         <Check
                                           className={`mr-2 h-4 w-4 ${
-                                            newCabinNumber === cabin.cabin_nr ? "opacity-100" : "opacity-0"
+                                            newCabinNumber === cabin.cabin_nr
+                                              ? "opacity-100 text-blue-600"
+                                              : "opacity-0"
                                           }`}
                                         />
                                         {cabin.cabin_nr} - {cabin.guests.length}{" "}
@@ -1158,13 +1234,13 @@ export default function DashboardPage() {
 
                                       {cabin.table_nr ? (
                                         <div className="flex items-center">
-                                          <Badge variant="outline" className="mr-2 bg-blue-50">
+                                          <Badge variant="outline" className="mr-2 bg-blue-50 text-blue-700">
                                             Table {cabin.table_nr}
                                           </Badge>
                                           <Button
                                             size="sm"
                                             variant="ghost"
-                                            className="h-7 px-2 text-xs"
+                                            className="h-7 px-2 text-xs hover:bg-blue-100 hover:text-blue-700"
                                             onClick={(e) => {
                                               e.stopPropagation()
                                               handleQuickAssign(cabin)
@@ -1177,7 +1253,7 @@ export default function DashboardPage() {
                                         <Button
                                           size="sm"
                                           variant="ghost"
-                                          className="h-7 px-2 text-xs"
+                                          className="h-7 px-2 text-xs hover:bg-blue-100 hover:text-blue-700"
                                           onClick={(e) => {
                                             e.stopPropagation()
                                             handleQuickAssign(cabin)
@@ -1234,6 +1310,8 @@ export default function DashboardPage() {
                     >
                       Add Cabin to Table
                     </Button>
+                    {/* 6. Add the UnassignedGuests component to the Add Cabin to Table section */}
+                    <UnassignedGuests currentTableNumber={newTableNumber} onAssignGuest={assignIndividualGuest} />
                   </div>
                 </div>
               </div>
