@@ -1,19 +1,27 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Trash2, Plus, Search, RefreshCw, Check, User, Users, X } from "lucide-react"
+import { Trash2, Plus, Search, RefreshCw, Check, User, Users, AlertTriangle } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandList, CommandInput, CommandItem, CommandEmpty, CommandGroup } from "@/components/ui/command"
 import { clientStorage } from "@/utils/client-storage"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FloorPlan } from "@/components/floor-plan"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
 
 // Table capacity configuration based on the floor plan - removed tables 5 and 15
 const TABLE_CAPACITIES = {
@@ -40,6 +48,7 @@ const TABLE_CAPACITIES = {
 export default function DashboardPage() {
   const router = useRouter()
   const supabase = createClientComponentClient()
+  const tableGuestsRef = useRef(null)
 
   // State
   const [loading, setLoading] = useState(true)
@@ -64,6 +73,11 @@ export default function DashboardPage() {
   const [tableGuestPreview, setTableGuestPreview] = useState([])
   const [showTablePreview, setShowTablePreview] = useState(false)
   const [removingGuest, setRemovingGuest] = useState(false)
+
+  // Add state for confirmation dialog
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [cabinToReassign, setCabinToReassign] = useState(null)
+  const [currentTableNumber, setCurrentTableNumber] = useState(null)
 
   // Check authentication and fetch data
   useEffect(() => {
@@ -138,6 +152,12 @@ export default function DashboardPage() {
         suggestions.push({
           cabin_nr: cabin,
           guests: cabinGroups[cabin],
+          // Check if all guests in this cabin are assigned to the same table
+          table_nr:
+            cabinGroups[cabin].length > 0 &&
+            cabinGroups[cabin].every((g) => g.table_nr === cabinGroups[cabin][0].table_nr)
+              ? cabinGroups[cabin][0].table_nr
+              : null,
         })
       }
 
@@ -168,10 +188,47 @@ export default function DashboardPage() {
 
     // If table number is already selected, automatically add the cabin to the table
     if (newTableNumber) {
-      // Wait for state to update
-      setTimeout(() => {
-        addCabinToTable(cabin.cabin_nr, Array.from(nationalities)[0] || "")
-      }, 100)
+      // Check if cabin is already assigned to a different table
+      if (cabin.table_nr && cabin.table_nr !== Number.parseInt(newTableNumber)) {
+        // Show confirmation dialog
+        setCabinToReassign(cabin)
+        setCurrentTableNumber(cabin.table_nr)
+        setConfirmDialogOpen(true)
+      } else if (!cabin.table_nr) {
+        // Wait for state to update
+        setTimeout(() => {
+          addCabinToTable(cabin.cabin_nr, Array.from(nationalities)[0] || "")
+        }, 100)
+      }
+    }
+  }
+
+  // Handle quick assign from search results
+  const handleQuickAssign = (cabin) => {
+    if (!newTableNumber) {
+      setStatusMessage({
+        type: "error",
+        message: "Please enter a table number first.",
+      })
+      return
+    }
+
+    // Check if cabin is already assigned to a different table
+    if (cabin.table_nr && cabin.table_nr !== Number.parseInt(newTableNumber)) {
+      // Show confirmation dialog
+      setCabinToReassign(cabin)
+      setCurrentTableNumber(cabin.table_nr)
+      setConfirmDialogOpen(true)
+    } else {
+      // Get nationality from cabin guests
+      const nationalities = new Set()
+      for (let i = 0; i < cabin.guests.length; i++) {
+        if (cabin.guests[i].nationality) {
+          nationalities.add(cabin.guests[i].nationality)
+        }
+      }
+
+      addCabinToTable(cabin.cabin_nr, Array.from(nationalities)[0] || "")
     }
   }
 
@@ -709,6 +766,16 @@ export default function DashboardPage() {
     }
   }
 
+  // Handle confirmation dialog for reassigning cabin
+  const handleConfirmReassign = async () => {
+    if (cabinToReassign) {
+      await addCabinToTable(cabinToReassign.cabin_nr, "")
+      setCabinToReassign(null)
+      setCurrentTableNumber(null)
+      setConfirmDialogOpen(false)
+    }
+  }
+
   // Remove a single guest from a table
   const removeGuestFromTable = async (guestId) => {
     try {
@@ -725,8 +792,15 @@ export default function DashboardPage() {
         throw updateError
       }
 
-      // Refresh the data
+      // Refresh the data while maintaining scroll position
       await fetchGuests()
+
+      // Scroll back to position after state update
+      if (tableGuestsRef.current) {
+        setTimeout(() => {
+          tableGuestsRef.current.scrollIntoView({ behavior: "auto", block: "nearest" })
+        }, 100)
+      }
 
       setStatusMessage({
         type: "success",
@@ -869,6 +943,13 @@ export default function DashboardPage() {
     return result
   }
 
+  // Calculate statistics
+  const totalGuests = guests.length
+  const assignedGuests = guests.filter((g) => g.table_nr).length
+  const unassignedGuests = totalGuests - assignedGuests
+  const tablesUsed = new Set(guests.map((g) => g.table_nr).filter(Boolean)).size
+  const bookingGroups = new Set(guests.map((g) => g.booking_number)).size
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -932,25 +1013,30 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
               <p className="text-sm text-blue-600 font-medium">Total Guests</p>
-              <p className="text-2xl font-bold">{guests.length}</p>
+              <p className="text-2xl font-bold">{totalGuests}</p>
             </div>
 
             <div className="bg-green-50 p-3 rounded-lg border border-green-100">
               <p className="text-sm text-green-600 font-medium">Assigned Guests</p>
-              <p className="text-2xl font-bold">{guests.filter((g) => g.table_nr).length}</p>
+              <p className="text-2xl font-bold">{assignedGuests}</p>
             </div>
 
             <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
               <p className="text-sm text-amber-600 font-medium">Tables Used</p>
-              <p className="text-2xl font-bold">{new Set(guests.map((g) => g.table_nr).filter(Boolean)).size}</p>
+              <p className="text-2xl font-bold">{tablesUsed}</p>
+            </div>
+
+            <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
+              <p className="text-sm text-orange-600 font-medium">Unassigned Guests</p>
+              <p className="text-2xl font-bold">{unassignedGuests}</p>
             </div>
 
             <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
               <p className="text-sm text-purple-600 font-medium">Booking Groups</p>
-              <p className="text-2xl font-bold">{new Set(guests.map((g) => g.booking_number)).size}</p>
+              <p className="text-2xl font-bold">{bookingGroups}</p>
             </div>
           </div>
         </div>
@@ -1005,24 +1091,26 @@ export default function DashboardPage() {
                               seats
                             </Badge>
                           </div>
-                          <ul className="space-y-1 max-h-24 overflow-y-auto">
-                            {tableGuestPreview.map((guest) => (
-                              <li key={guest.id} className="text-sm flex items-center justify-between">
-                                <div className="flex items-center">
-                                  <User className="h-3 w-3 mr-1 text-blue-400" />
-                                  {guest.guest_name || "Unknown"} ({guest.cabin_nr})
-                                </div>
-                                <button
-                                  onClick={() => removeGuestFromTable(guest.id)}
-                                  disabled={removingGuest}
-                                  className="text-red-500 hover:text-red-700 p-1"
-                                  title="Remove guest from table"
-                                >
-                                  <X className="h-3 w-3" />
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
+                          <div ref={tableGuestsRef} className="max-h-24 overflow-y-auto">
+                            <ul className="space-y-1">
+                              {tableGuestPreview.map((guest) => (
+                                <li key={guest.id} className="text-sm flex items-center justify-between">
+                                  <div className="flex items-center">
+                                    <User className="h-3 w-3 mr-1 text-blue-400" />
+                                    {guest.guest_name || "Unknown"} ({guest.cabin_nr})
+                                  </div>
+                                  <button
+                                    onClick={() => removeGuestFromTable(guest.id)}
+                                    disabled={removingGuest}
+                                    className="text-red-500 hover:text-red-700 p-1"
+                                    title="Remove guest from table"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1056,14 +1144,48 @@ export default function DashboardPage() {
                                       key={cabin.cabin_nr}
                                       value={cabin.cabin_nr}
                                       onSelect={() => handleCabinSelect(cabin)}
+                                      className="flex justify-between items-center cursor-pointer"
                                     >
-                                      <Check
-                                        className={`mr-2 h-4 w-4 ${
-                                          newCabinNumber === cabin.cabin_nr ? "opacity-100" : "opacity-0"
-                                        }`}
-                                      />
-                                      {cabin.cabin_nr} - {cabin.guests.length}{" "}
-                                      {cabin.guests.length === 1 ? "guest" : "guests"}
+                                      <div className="flex items-center">
+                                        <Check
+                                          className={`mr-2 h-4 w-4 ${
+                                            newCabinNumber === cabin.cabin_nr ? "opacity-100" : "opacity-0"
+                                          }`}
+                                        />
+                                        {cabin.cabin_nr} - {cabin.guests.length}{" "}
+                                        {cabin.guests.length === 1 ? "guest" : "guests"}
+                                      </div>
+
+                                      {cabin.table_nr ? (
+                                        <div className="flex items-center">
+                                          <Badge variant="outline" className="mr-2 bg-blue-50">
+                                            Table {cabin.table_nr}
+                                          </Badge>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-7 px-2 text-xs"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleQuickAssign(cabin)
+                                            }}
+                                          >
+                                            Reassign
+                                          </Button>
+                                        </div>
+                                      ) : (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-7 px-2 text-xs"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleQuickAssign(cabin)
+                                          }}
+                                        >
+                                          Assign
+                                        </Button>
+                                      )}
                                     </CommandItem>
                                   ))}
                                 </CommandGroup>
@@ -1222,6 +1344,33 @@ export default function DashboardPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Confirmation Dialog for Reassigning Cabin */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reassign Cabin</DialogTitle>
+            <DialogDescription>
+              This cabin is currently assigned to Table {currentTableNumber}. Do you want to reassign it to Table{" "}
+              {newTableNumber}?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center p-4 bg-amber-50 rounded-md">
+            <AlertTriangle className="h-5 w-5 text-amber-500 mr-2" />
+            <p className="text-sm text-amber-700">
+              This will remove all guests in this cabin from their current table assignment.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmReassign} className="bg-blue-600 hover:bg-blue-700">
+              Reassign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

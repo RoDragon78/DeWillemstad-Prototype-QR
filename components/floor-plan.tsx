@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import { X } from "lucide-react"
+import { Trash2 } from "lucide-react"
 
 // Simplified table positions
 const TABLE_POSITIONS = {
@@ -39,6 +39,7 @@ export function FloorPlan(props) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
   const [removingGuest, setRemovingGuest] = useState(false)
+  const tableGuestsRef = useRef(null)
   const supabase = createClientComponentClient()
 
   // Fetch fresh data for the selected table when dialog opens
@@ -116,6 +117,13 @@ export function FloorPlan(props) {
 
       // Refresh the table guests
       fetchTableGuests(selectedTable)
+
+      // Scroll back to position after state update
+      if (tableGuestsRef.current) {
+        setTimeout(() => {
+          tableGuestsRef.current.scrollIntoView({ behavior: "auto", block: "nearest" })
+        }, 100)
+      }
 
       // Notify parent component to refresh all data
       if (onTableUpdate) {
@@ -236,7 +244,7 @@ export function FloorPlan(props) {
                 className="text-red-500 hover:text-red-700 p-1"
                 title="Remove guest from table"
               >
-                <X className="h-3 w-3" />
+                <Trash2 className="h-3 w-3" />
               </button>
             </td>
           </tr>,
@@ -363,7 +371,7 @@ export function FloorPlan(props) {
                   ) : error ? (
                     <p className="text-red-500">{error}</p>
                   ) : tableGuests.length > 0 ? (
-                    <div className="max-h-60 overflow-y-auto">
+                    <div ref={tableGuestsRef} className="max-h-60 overflow-y-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50">
                           <tr>
