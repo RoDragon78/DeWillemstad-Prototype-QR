@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { User, Search } from "lucide-react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
 
 interface UnassignedGuestsProps {
   currentTableNumber: string | null
@@ -110,7 +111,11 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
   )
 
   if (isLoading) {
-    return <div className="text-center py-4 text-gray-500">Loading unassigned guests...</div>
+    return (
+      <div className="mt-4 border rounded-lg p-3 bg-gray-50">
+        <LoadingSpinner size={20} text="Loading unassigned guests..." />
+      </div>
+    )
   }
 
   return (

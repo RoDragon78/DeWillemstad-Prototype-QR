@@ -1,7 +1,9 @@
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
+
 export default function Loading() {
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <p className="text-lg">Loading confirmation...</p>
+      <LoadingSpinner size={40} text="Loading confirmation..." />
     </div>
   )
 }
