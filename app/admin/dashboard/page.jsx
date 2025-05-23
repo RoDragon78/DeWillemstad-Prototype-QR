@@ -110,8 +110,6 @@ export default function DashboardPage() {
     }
   }
 
-  // Add these functions after the existing state declarations and before useEffect
-
   // Calculate statistics
   const calculateStatistics = () => {
     const totalGuests = guests.length
@@ -646,19 +644,28 @@ export default function DashboardPage() {
       }
 
       // Check if the table has enough capacity
-      let currentTableGuestCount = 0
-      for (let i = 0; i < guests.length; i++) {
-        if (guests[i].table_nr === tableNumber) {
-          currentTableGuestCount++
-        }
+      const { data: currentTableGuests, error: tableError } = await supabase
+        .from("guest_manifest")
+        .select("id")
+        .eq("table_nr", tableNumber)
+
+      if (tableError) {
+        console.error("Error fetching current table guests:", tableError)
+        throw tableError
       }
 
+      const currentTableGuestCount = currentTableGuests ? currentTableGuests.length : 0
       const cabinGuestsCount = cabinGuests.length
+      const tableCapacity = TABLE_CAPACITIES[tableNumber] || 0
 
-      if (currentTableGuestCount + cabinGuestsCount > TABLE_CAPACITIES[tableNumber]) {
+      console.log(
+        `Table ${tableNumber} - Current: ${currentTableGuestCount}, Adding: ${cabinGuestsCount}, Capacity: ${tableCapacity}`,
+      )
+
+      if (currentTableGuestCount + cabinGuestsCount > tableCapacity) {
         setStatusMessage({
           type: "error",
-          message: `Table ${tableNumber} does not have enough capacity for cabin ${cabinToAdd}.`,
+          message: `Table ${tableNumber} does not have enough capacity. Current: ${currentTableGuestCount}/${tableCapacity}, Adding: ${cabinGuestsCount}`,
         })
         return
       }
@@ -701,6 +708,67 @@ export default function DashboardPage() {
       })
       // Refresh data to ensure consistency
       fetchGuests()
+    }
+  }
+
+  // Handle individual guest assignment
+  const handleAssignGuest = async (guestId, guestName, cabinNumber) => {
+    try {
+      if (!newTableNumber) {
+        throw new Error("No table number selected")
+      }
+
+      const tableNumber = Number.parseInt(newTableNumber, 10)
+
+      // Validate table number
+      if (!TABLE_CAPACITIES[tableNumber]) {
+        throw new Error(`Table ${tableNumber} does not exist.`)
+      }
+
+      // Check if the table has enough capacity
+      const { data: currentTableGuests, error: tableError } = await supabase
+        .from("guest_manifest")
+        .select("id")
+        .eq("table_nr", tableNumber)
+
+      if (tableError) {
+        console.error("Error fetching current table guests:", tableError)
+        throw tableError
+      }
+
+      const currentTableGuestCount = currentTableGuests ? currentTableGuests.length : 0
+      const tableCapacity = TABLE_CAPACITIES[tableNumber] || 0
+
+      if (currentTableGuestCount >= tableCapacity) {
+        throw new Error(
+          `Table ${tableNumber} is already at full capacity (${currentTableGuestCount}/${tableCapacity}).`,
+        )
+      }
+
+      // Update the guest
+      const { error: updateError } = await supabase
+        .from("guest_manifest")
+        .update({
+          table_nr: tableNumber,
+        })
+        .eq("id", guestId)
+
+      if (updateError) {
+        console.error("Error updating guest:", updateError)
+        throw updateError
+      }
+
+      // Refresh data
+      await fetchGuests()
+
+      return true
+    } catch (error) {
+      console.error("Error assigning guest:", error)
+      setStatusMessage({
+        type: "error",
+        message: error.message || "Failed to assign guest. Please try again.",
+      })
+      throw error
     }
   }
 
@@ -998,12 +1066,7 @@ export default function DashboardPage() {
                   </Card>
 
                   {/* Unassigned Guests */}
-                  <UnassignedGuests
-                    currentTableNumber={newTableNumber}
-                    onAssignGuest={(guestId, guestName, cabinNumber) => {
-                      addCabinToTable(cabinNumber, "")
-                    }}
-                  />
+                  <UnassignedGuests currentTableNumber={newTableNumber} onAssignGuest={handleAssignGuest} />
                 </div>
               </div>
             </div>

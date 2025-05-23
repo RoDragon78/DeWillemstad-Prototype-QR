@@ -28,24 +28,22 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
     try {
       setIsLoading(true)
 
-      // Fetch all guests first, then filter on client side for better real-time updates
+      // Explicitly fetch guests where table_nr is null
       const { data, error } = await supabase
         .from("guest_manifest")
         .select("*")
+        .is("table_nr", null)
         .order("cabin_nr", { ascending: true })
         .order("guest_name", { ascending: true })
 
       if (error) {
-        console.error("Error fetching guests:", error)
+        console.error("Error fetching unassigned guests:", error)
         return
       }
 
-      // Filter to only unassigned guests (table_nr is null or undefined)
-      const unassigned = (data || []).filter((guest) => guest.table_nr === null || guest.table_nr === undefined)
-
-      console.log("Fetched unassigned guests:", unassigned)
-      setUnassignedGuests(unassigned)
-      setFilteredGuests(unassigned)
+      console.log("Fetched unassigned guests:", data)
+      setUnassignedGuests(data || [])
+      setFilteredGuests(data || [])
     } catch (error) {
       console.error("Error in fetchUnassignedGuests:", error)
     } finally {
