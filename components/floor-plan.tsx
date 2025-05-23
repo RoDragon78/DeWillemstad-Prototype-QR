@@ -104,9 +104,16 @@ export function FloorPlan(props) {
   }
 
   // Remove a guest from a table
-  const removeGuestFromTable = async (guestId) => {
+  const removeGuestFromTable = async (guestId, event) => {
     try {
+      // Prevent event propagation to avoid dialog closing
+      if (event) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+
       setRemovingGuest(true)
+      setError(null)
 
       // Store scroll position before update
       const scrollPosition = tableGuestsRef.current ? tableGuestsRef.current.scrollTop : 0
@@ -244,7 +251,7 @@ export function FloorPlan(props) {
             <td className="px-2 py-1">{guest.nationality || "Unknown"}</td>
             <td className="px-2 py-1">
               <button
-                onClick={() => removeGuestFromTable(guest.id)}
+                onClick={(e) => removeGuestFromTable(guest.id, e)}
                 disabled={removingGuest}
                 className="text-red-500 hover:text-red-700 p-1"
                 title="Remove guest from table"

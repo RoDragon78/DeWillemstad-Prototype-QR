@@ -25,6 +25,9 @@ import {
 
 import { UnassignedGuests } from "@/components/unassigned-guests"
 
+// Import the GuestList component at the top of the file
+import { GuestList } from "@/components/guest-list"
+
 // Table capacity configuration based on the floor plan - removed tables 5 and 15
 const TABLE_CAPACITIES = {
   1: 4,
@@ -80,18 +83,30 @@ export default function DashboardPage() {
   const [cabinToReassign, setCabinToReassign] = useState(null)
   const [currentTableNumber, setCurrentTableNumber] = useState(null)
 
-  // Store scroll position before updates
+  // Add a more robust storeScrollPosition function
   const storeScrollPosition = () => {
     if (typeof window !== "undefined") {
       scrollPositionRef.current = window.scrollY
+      // Also store the position of any open dialogs or scrollable containers
+      if (tableGuestsRef.current) {
+        lastActionRef.current = {
+          type: "table_guests",
+          scrollTop: tableGuestsRef.current.scrollTop,
+        }
+      }
     }
   }
 
-  // Restore scroll position after updates
+  // Add a more robust restoreScrollPosition function
   const restoreScrollPosition = () => {
     if (typeof window !== "undefined" && scrollPositionRef.current !== null) {
       requestAnimationFrame(() => {
         window.scrollTo(0, scrollPositionRef.current)
+
+        // Restore any specific container scroll positions
+        if (lastActionRef.current && lastActionRef.current.type === "table_guests" && tableGuestsRef.current) {
+          tableGuestsRef.current.scrollTop = lastActionRef.current.scrollTop
+        }
       })
     }
   }
@@ -1181,6 +1196,7 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+        <GuestList />
       </div>
 
       {/* Confirmation Dialog for Reassigning Cabin */}

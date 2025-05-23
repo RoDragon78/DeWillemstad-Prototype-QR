@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -88,7 +90,18 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
   }, [searchTerm, unassignedGuests])
 
   // Handle guest assignment
-  const handleAssignGuest = async (guestId: string, guestName: string, cabinNumber: string) => {
+  const handleAssignGuest = async (
+    guestId: string,
+    guestName: string,
+    cabinNumber: string,
+    event?: React.MouseEvent,
+  ) => {
+    // Prevent event propagation
+    if (event) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+
     setAssigningGuest(guestId)
     try {
       await onAssignGuest(guestId, guestName, cabinNumber)
@@ -155,7 +168,7 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
                       variant="ghost"
                       className="h-6 px-2 text-xs hover:bg-blue-50 hover:text-blue-700"
                       disabled={!currentTableNumber || assigningGuest === guest.id}
-                      onClick={() => handleAssignGuest(guest.id, guest.guest_name, guest.cabin_nr)}
+                      onClick={(e) => handleAssignGuest(guest.id, guest.guest_name, guest.cabin_nr, e)}
                     >
                       {assigningGuest === guest.id ? "..." : "Assign"}
                     </Button>
