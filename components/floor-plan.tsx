@@ -4,6 +4,9 @@ import { useState, useEffect, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Trash2 } from "lucide-react"
+import { DndProvider } from "react-dnd"
+import { HTML5Backend } from "react-dnd-html5-backend"
+import { DroppableTable } from "./droppable-table"
 
 // Simplified table positions
 const TABLE_POSITIONS = {
@@ -39,6 +42,7 @@ export function FloorPlan(props) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
   const [removingGuest, setRemovingGuest] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
   const tableGuestsRef = useRef(null)
   const supabase = createClientComponentClient()
 
@@ -149,6 +153,31 @@ export function FloorPlan(props) {
     }
   }
 
+  // Handle drop of a guest onto a table
+  const handleGuestDrop = async (guestId, tableNumber) => {
+    try {
+      setError(null)
+
+      const { error } = await supabase.from("guest_manifest").update({ table_nr: tableNumber }).eq("id", guestId)
+
+      if (error) {
+        console.error("Error assigning guest to table:", error)
+        throw error
+      }
+
+      // Notify parent component to refresh all data
+      if (onTableUpdate) {
+        onTableUpdate()
+      }
+
+      return true
+    } catch (error) {
+      console.error("Error dropping guest on table:", error)
+      setError("Failed to assign guest to table")
+      return false
+    }
+  }
+
   // Get assignments for a specific table
   const getTableAssignments = (tableNumber) => {
     // Group guests by cabin and nationality
@@ -200,6 +229,17 @@ export function FloorPlan(props) {
       }
     }
     return capacity > 0 ? (count / capacity) * 100 : 0
+  }
+
+  // Get current occupancy count for a table
+  const getTableOccupancyCount = (tableNumber) => {
+    let count = 0
+    for (let i = 0; i < guests.length; i++) {
+      if (guests[i].table_nr === tableNumber) {
+        count++
+      }
+    }
+    return count
   }
 
   // Get color based on occupancy - blue gradient color scheme
@@ -277,9 +317,13 @@ export function FloorPlan(props) {
       const position = TABLE_POSITIONS[tableNumber]
       const tableNum = Number.parseInt(tableNumber, 10)
       const isSelected = selectedTable === tableNum
+      const currentOccupancy = getTableOccupancyCount(tableNum)
+      const capacity = tableCapacities[tableNum] || 0
 
+      // Create the table shape
+      let tableShape
       if (position.shape === "rect") {
-        tables.push(
+        tableShape = (
           <rect
             key={tableNumber}
             x={position.x}
@@ -293,10 +337,10 @@ export function FloorPlan(props) {
             strokeWidth={isSelected ? 3 : 2}
             onClick={() => handleTableClick(tableNum)}
             className="cursor-pointer hover:opacity-80 transition-opacity"
-          />,
+          />
         )
       } else {
-        tables.push(
+        tableShape = (
           <circle
             key={tableNumber}
             cx={position.x + position.width / 2}
@@ -307,9 +351,22 @@ export function FloorPlan(props) {
             strokeWidth={isSelected ? 3 : 2}
             onClick={() => handleTableClick(tableNum)}
             className="cursor-pointer hover:opacity-80 transition-opacity"
-          />,
+          />
         )
       }
+
+      // Wrap in DroppableTable component
+      tables.push(
+        <DroppableTable
+          key={tableNumber}
+          tableNumber={tableNum}
+          capacity={capacity}
+          currentOccupancy={currentOccupancy}
+          onDrop={handleGuestDrop}
+        >
+          {tableShape}
+        </DroppableTable>,
+      )
     }
 
     return tables
@@ -323,12 +380,15 @@ export function FloorPlan(props) {
     for (let i = 0; i < tableNumbers.length; i++) {
       const tableNumber = tableNumbers[i]
       const position = TABLE_POSITIONS[tableNumber]
+      const tableNum = Number.parseInt(tableNumber, 10)
+      const currentOccupancy = getTableOccupancyCount(tableNum)
+      const capacity = tableCapacities[tableNum] || 0
 
       labels.push(
         <g key={`label-${tableNumber}`}>
           <text
             x={position.x + position.width / 2}
-            y={position.y + position.height / 2}
+            y={position.y + position.height / 2 - 8}
             textAnchor="middle"
             dominantBaseline="middle"
             fill="rgb(17, 24, 39)"
@@ -338,6 +398,17 @@ export function FloorPlan(props) {
           >
             {tableNumber}
           </text>
+          <text
+            x={position.x + position.width / 2}
+            y={position.y + position.height / 2 + 12}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="rgb(75, 85, 99)"
+            fontSize="12"
+            className="select-none"
+          >
+            {currentOccupancy}/{capacity}
+          </text>
         </g>,
       )
     }
@@ -346,114 +417,116 @@ export function FloorPlan(props) {
   }
 
   return (
-    <div className="relative w-full" style={{ height: "600px" }}>
-      {/* Table information dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => setDialogOpen(open)}>
-        <DialogContent className="sm:max-w-md">
-          {selectedTable && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-xl">Table {selectedTable}</DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-2 items-center">
-                  <span className="font-medium">Capacity:</span>
-                  <span>{tableCapacities[selectedTable]} guests</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 items-center">
-                  <span className="font-medium">Occupancy:</span>
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-full bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${Math.min(getTableOccupancy(selectedTable), 100)}%`,
-                          backgroundColor: getTableBorderColor(selectedTable),
-                        }}
-                      />
+    <DndProvider backend={HTML5Backend}>
+      <div className="relative w-full" style={{ height: "600px" }}>
+        {/* Table information dialog */}
+        <Dialog open={dialogOpen} onOpenChange={(open) => setDialogOpen(open)}>
+          <DialogContent className="sm:max-w-md">
+            {selectedTable && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-xl">Table {selectedTable}</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <span className="font-medium">Capacity:</span>
+                    <span>{tableCapacities[selectedTable]} guests</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 items-center">
+                    <span className="font-medium">Occupancy:</span>
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-full bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(getTableOccupancy(selectedTable), 100)}%`,
+                            backgroundColor: getTableBorderColor(selectedTable),
+                          }}
+                        />
+                      </div>
+                      <span>{Math.round(getTableOccupancy(selectedTable))}%</span>
                     </div>
-                    <span>{Math.round(getTableOccupancy(selectedTable))}%</span>
+                  </div>
+
+                  <div className="mt-2">
+                    <h4 className="font-medium mb-2">Assigned Guests:</h4>
+                    {isLoading ? (
+                      <p className="text-gray-500">Loading...</p>
+                    ) : error ? (
+                      <p className="text-red-500">{error}</p>
+                    ) : tableGuests.length > 0 ? (
+                      <div ref={tableGuestsRef} className="max-h-60 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-2 py-1 text-left">Cabin</th>
+                              <th className="px-2 py-1 text-left">Guest</th>
+                              <th className="px-2 py-1 text-left">Nationality</th>
+                              <th className="px-2 py-1 text-left w-8"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">{renderTableAssignments()}</tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-gray-500">No guests assigned to this table.</p>
+                    )}
                   </div>
                 </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
 
-                <div className="mt-2">
-                  <h4 className="font-medium mb-2">Assigned Guests:</h4>
-                  {isLoading ? (
-                    <p className="text-gray-500">Loading...</p>
-                  ) : error ? (
-                    <p className="text-red-500">{error}</p>
-                  ) : tableGuests.length > 0 ? (
-                    <div ref={tableGuestsRef} className="max-h-60 overflow-y-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-2 py-1 text-left">Cabin</th>
-                            <th className="px-2 py-1 text-left">Guest</th>
-                            <th className="px-2 py-1 text-left">Nationality</th>
-                            <th className="px-2 py-1 text-left w-8"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y">{renderTableAssignments()}</tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="text-gray-500">No guests assigned to this table.</p>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+        {/* Floor plan */}
+        <svg width="100%" height="100%" viewBox="0 0 800 600" className="border rounded">
+          {/* Background */}
+          <rect x="0" y="0" width="800" height="600" fill="white" />
 
-      {/* Floor plan */}
-      <svg width="100%" height="100%" viewBox="0 0 800 600" className="border rounded">
-        {/* Background */}
-        <rect x="0" y="0" width="800" height="600" fill="white" />
+          {/* Tables */}
+          {renderTables()}
 
-        {/* Tables */}
-        {renderTables()}
+          {/* Table labels */}
+          {renderTableLabels()}
 
-        {/* Table labels */}
-        {renderTableLabels()}
+          {/* Occupancy legend - blue gradient */}
+          <g transform="translate(50, 480)">
+            <text x="0" y="0" fontWeight="medium" fontSize="12">
+              Occupancy:
+            </text>
 
-        {/* Occupancy legend - blue gradient */}
-        <g transform="translate(50, 480)">
-          <text x="0" y="0" fontWeight="medium" fontSize="12">
-            Occupancy:
-          </text>
+            <circle cx="10" cy="20" r="6" fill="rgb(239, 246, 255)" stroke="rgb(191, 219, 254)" strokeWidth="2" />
+            <text x="25" y="24" fontSize="12">
+              Empty
+            </text>
 
-          <circle cx="10" cy="20" r="6" fill="rgb(239, 246, 255)" stroke="rgb(191, 219, 254)" strokeWidth="2" />
-          <text x="25" y="24" fontSize="12">
-            Empty
-          </text>
+            <circle cx="10" cy="45" r="6" fill="rgb(219, 234, 254)" stroke="rgb(147, 197, 253)" strokeWidth="2" />
+            <text x="25" y="49" fontSize="12">
+              1-25%
+            </text>
 
-          <circle cx="10" cy="45" r="6" fill="rgb(219, 234, 254)" stroke="rgb(147, 197, 253)" strokeWidth="2" />
-          <text x="25" y="49" fontSize="12">
-            1-25%
-          </text>
+            <circle cx="10" cy="70" r="6" fill="rgb(191, 219, 254)" stroke="rgb(96, 165, 250)" strokeWidth="2" />
+            <text x="25" y="74" fontSize="12">
+              26-50%
+            </text>
 
-          <circle cx="10" cy="70" r="6" fill="rgb(191, 219, 254)" stroke="rgb(96, 165, 250)" strokeWidth="2" />
-          <text x="25" y="74" fontSize="12">
-            26-50%
-          </text>
+            <circle cx="80" cy="20" r="6" fill="rgb(147, 197, 253)" stroke="rgb(59, 130, 246)" strokeWidth="2" />
+            <text x="95" y="24" fontSize="12">
+              51-75%
+            </text>
 
-          <circle cx="80" cy="20" r="6" fill="rgb(147, 197, 253)" stroke="rgb(59, 130, 246)" strokeWidth="2" />
-          <text x="95" y="24" fontSize="12">
-            51-75%
-          </text>
+            <circle cx="80" cy="45" r="6" fill="rgb(96, 165, 250)" stroke="rgb(37, 99, 235)" strokeWidth="2" />
+            <text x="95" y="49" fontSize="12">
+              76-99%
+            </text>
 
-          <circle cx="80" cy="45" r="6" fill="rgb(96, 165, 250)" stroke="rgb(37, 99, 235)" strokeWidth="2" />
-          <text x="95" y="49" fontSize="12">
-            76-99%
-          </text>
-
-          <circle cx="80" cy="70" r="6" fill="rgb(59, 130, 246)" stroke="rgb(29, 78, 216)" strokeWidth="2" />
-          <text x="95" y="74" fontSize="12">
-            100%
-          </text>
-        </g>
-      </svg>
-    </div>
+            <circle cx="80" cy="70" r="6" fill="rgb(59, 130, 246)" stroke="rgb(29, 78, 216)" strokeWidth="2" />
+            <text x="95" y="74" fontSize="12">
+              100%
+            </text>
+          </g>
+        </svg>
+      </div>
+    </DndProvider>
   )
 }

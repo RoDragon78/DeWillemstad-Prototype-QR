@@ -2,13 +2,14 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { User, Search } from "lucide-react"
+import { Search } from "lucide-react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { DraggableGuest } from "./draggable-guest"
 
 interface UnassignedGuestsProps {
   currentTableNumber: string | null
@@ -21,6 +22,7 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
   const [searchTerm, setSearchTerm] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [assigningGuest, setAssigningGuest] = useState<string | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const supabase = createClientComponentClient()
 
   // Fetch unassigned guests
@@ -150,23 +152,19 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
         />
       </div>
 
-      <div className="max-h-48 overflow-y-auto pr-1">
+      <div ref={containerRef} className="max-h-48 overflow-y-auto pr-1">
         {Object.keys(groupedGuests).length > 0 ? (
           Object.entries(groupedGuests).map(([cabinNr, cabinGuests]) => (
             <div key={cabinNr} className="mb-2">
               <div className="text-xs font-medium text-gray-500 mb-1">Cabin {cabinNr}</div>
               <div className="space-y-1">
                 {cabinGuests.map((guest) => (
-                  <div key={guest.id} className="flex items-center justify-between bg-white p-2 rounded border text-sm">
-                    <div className="flex items-center">
-                      <User className="h-3 w-3 mr-1 text-gray-400" />
-                      <span className="font-medium">{guest.guest_name || "Unknown"}</span>
-                      {guest.nationality && <span className="ml-1 text-xs text-gray-500">({guest.nationality})</span>}
-                    </div>
+                  <div key={guest.id} className="flex items-center justify-between">
+                    <DraggableGuest guest={guest} />
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-6 px-2 text-xs hover:bg-blue-50 hover:text-blue-700"
+                      className="h-6 px-2 text-xs hover:bg-blue-50 hover:text-blue-700 ml-1"
                       disabled={!currentTableNumber || assigningGuest === guest.id}
                       onClick={(e) => handleAssignGuest(guest.id, guest.guest_name, guest.cabin_nr, e)}
                     >
@@ -189,6 +187,10 @@ export function UnassignedGuests({ currentTableNumber, onAssignGuest }: Unassign
           Enter a table number above to assign guests
         </div>
       )}
+
+      <div className="mt-2 text-xs text-blue-600 bg-blue-50 p-2 rounded">
+        <p>Tip: You can drag guests directly onto tables in the floor plan.</p>
+      </div>
     </div>
   )
 }
