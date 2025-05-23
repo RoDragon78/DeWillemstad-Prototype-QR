@@ -37,7 +37,12 @@ export function MealPreviewDialog({
   const getMealName = (mealId: number) => {
     const meal = menuItems.find((m) => m.id === mealId)
     if (!meal) return "No selection"
-    return meal[`name_${language}` as keyof typeof meal] || meal.name_en
+
+    // Avoid using dynamic property access that might trigger __rest
+    if (language === "en") return meal.name_en
+    if (language === "nl") return meal.name_nl || meal.name_en
+    if (language === "de") return meal.name_de || meal.name_en
+    return meal.name_en
   }
 
   return (

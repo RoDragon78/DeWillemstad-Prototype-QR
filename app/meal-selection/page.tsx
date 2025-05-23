@@ -1,8 +1,6 @@
 "use client"
 
-import type React from "react"
-
-import { useEffect, useState, useCallback, useMemo } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Button } from "@/components/ui/button"
@@ -10,10 +8,6 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { AlertCircle, Check, ChevronLeft, ChevronRight } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { MealPreviewDialog } from "@/components/meal-preview-dialog"
-import { generateAndDownloadPdf } from "@/components/pdf-service"
-import type { Guest } from "@/types/guest"
-import type { MenuItem } from "@/types/menu-item"
 
 // Day names
 const DAY_NAMES = ["", "", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
@@ -28,25 +22,21 @@ const LANGUAGE_FLAGS = {
 export default function MealSelectionPage() {
   const router = useRouter()
   const supabase = createClientComponentClient()
-  const [cabinNumber, setCabinNumber] = useState<string | null>(null)
-  const [guests, setGuests] = useState<Guest[]>([])
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [cabinNumber, setCabinNumber] = useState("")
+  const [guests, setGuests] = useState([])
+  const [menuItems, setMenuItems] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDay, setSelectedDay] = useState(2) // Default to Day 2
-  const [mealSelections, setMealSelections] = useState<Record<string, Record<number, number>>>({})
+  const [mealSelections, setMealSelections] = useState({})
   const [isSaving, setIsSaving] = useState(false)
-  const [isPdfGenerating, setIsPdfGenerating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [validationError, setValidationError] = useState<string | null>(null)
-  const [language, setLanguage] = useState<"en" | "nl" | "de">("en")
-  const [showPreview, setShowPreview] = useState(false)
-  const [previewAction, setPreviewAction] = useState<"pdf" | "save" | null>(null)
+  const [error, setError] = useState(null)
+  const [validationError, setValidationError] = useState(null)
+  const [language, setLanguage] = useState("en")
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [redirectCountdown, setRedirectCountdown] = useState(3)
-  const [savedSelections, setSavedSelections] = useState<Array<{ guest: string; days: Record<number, string> }>>([])
 
   // Track which days have selections
-  const [daysWithSelections, setDaysWithSelections] = useState<Record<number, boolean>>({
+  const [daysWithSelections, setDaysWithSelections] = useState({
     2: false,
     3: false,
     4: false,
@@ -71,9 +61,9 @@ export default function MealSelectionPage() {
     }
   }, [redirectCountdown, showConfirmation, router])
 
-  // Fetch guests for cabin - memoized to prevent unnecessary re-renders
+  // Fetch guests for cabin
   const fetchGuestsForCabin = useCallback(
-    async (cabin: string) => {
+    async (cabin) => {
       try {
         const { data, error: queryError } = await supabase
           .from("guest_manifest")
@@ -97,7 +87,7 @@ export default function MealSelectionPage() {
         setGuests(data)
 
         // Initialize meal selections
-        const initialSelections: Record<string, Record<number, number>> = {}
+        const initialSelections = {}
         data.forEach((guest) => {
           initialSelections[guest.id] = {
             2: 0,
@@ -121,7 +111,7 @@ export default function MealSelectionPage() {
     [supabase],
   )
 
-  // Fetch menu items - memoized
+  // Fetch menu items
   const fetchMenuItems = useCallback(async () => {
     try {
       const { data, error: queryError } = await supabase
@@ -147,9 +137,9 @@ export default function MealSelectionPage() {
     }
   }, [supabase])
 
-  // Fetch existing selections - memoized
+  // Fetch existing selections
   const fetchExistingSelections = useCallback(
-    async (guestIds: string[]) => {
+    async (guestIds) => {
       try {
         const { data, error: queryError } = await supabase.from("meal_selections").select("*").in("guest_id", guestIds)
 
@@ -193,7 +183,7 @@ export default function MealSelectionPage() {
     setCabinNumber(storedCabin)
 
     // Get language preference
-    const storedLanguage = localStorage.getItem("language") as "en" | "nl" | "de"
+    const storedLanguage = localStorage.getItem("language")
     if (storedLanguage) {
       setLanguage(storedLanguage)
     }
@@ -231,8 +221,8 @@ export default function MealSelectionPage() {
     setDaysWithSelections(newDaysWithSelections)
   }, [mealSelections, guests])
 
-  // Memoize the update function to prevent unnecessary re-renders
-  const updateMealSelection = useCallback((guestId: string, day: number, mealId: number) => {
+  // Update meal selection
+  const updateMealSelection = useCallback((guestId, day, mealId) => {
     setMealSelections((prev) => ({
       ...prev,
       [guestId]: {
@@ -257,25 +247,8 @@ export default function MealSelectionPage() {
     return true
   }, [mealSelections])
 
-  // Show preview before saving
-  const handleShowPreview = (action: "pdf" | "save") => {
-    if (!validateSelections()) {
-      setValidationError("Please select a meal for each guest for all days before saving.")
-      return
-    }
-
-    setPreviewAction(action)
-    setShowPreview(true)
-  }
-
-  // Close preview
-  const handleClosePreview = () => {
-    setShowPreview(false)
-    setPreviewAction(null)
-  }
-
   // Navigate to previous day
-  const goToPreviousDay = (e: React.MouseEvent) => {
+  const goToPreviousDay = (e) => {
     e.preventDefault()
     e.stopPropagation()
     if (selectedDay > 2) {
@@ -284,7 +257,7 @@ export default function MealSelectionPage() {
   }
 
   // Navigate to next day
-  const goToNextDay = (e: React.MouseEvent) => {
+  const goToNextDay = (e) => {
     e.preventDefault()
     e.stopPropagation()
     if (selectedDay < 7) {
@@ -292,33 +265,13 @@ export default function MealSelectionPage() {
     }
   }
 
-  // Prepare saved selections for display
-  const prepareSavedSelections = useCallback(() => {
-    const selections: Array<{ guest: string; days: Record<number, string> }> = []
-
-    guests.forEach((guest) => {
-      const guestSelections: Record<number, string> = {}
-
-      for (let day = 2; day <= 7; day++) {
-        const mealId = mealSelections[guest.id]?.[day]
-        if (mealId) {
-          const meal = menuItems.find((m) => m.id === mealId)
-          if (meal) {
-            guestSelections[day] = meal[`name_${language}` as keyof MenuItem] || meal.name_en
-          }
-        }
-      }
-
-      selections.push({
-        guest: guest.guest_name,
-        days: guestSelections,
-      })
-    })
-
-    return selections
-  }, [guests, mealSelections, menuItems, language])
-
+  // Handle save
   const handleSave = async () => {
+    if (!validateSelections()) {
+      setValidationError("Please select a meal for each guest for all days before saving.")
+      return
+    }
+
     setIsSaving(true)
     setValidationError(null)
 
@@ -332,11 +285,16 @@ export default function MealSelectionPage() {
           if (mealId) {
             const meal = menuItems.find((m) => m.id === mealId)
             if (meal) {
+              // Get meal name based on language
+              let mealName = meal.name_en
+              if (language === "nl" && meal.name_nl) mealName = meal.name_nl
+              if (language === "de" && meal.name_de) mealName = meal.name_de
+
               mealSelectionsToSave.push({
                 guest_id: guestId,
                 day: Number.parseInt(day),
                 meal_id: mealId,
-                meal_name: meal[`name_${language}` as keyof MenuItem] || meal.name_en,
+                meal_name: mealName,
                 meal_category: meal.meal_type,
                 created_at: new Date().toISOString(),
               })
@@ -357,13 +315,9 @@ export default function MealSelectionPage() {
         }
       }
 
-      // Prepare saved selections for display
-      setSavedSelections(prepareSavedSelections())
-
       // Show confirmation screen and start countdown
       setShowConfirmation(true)
       setRedirectCountdown(3)
-      setShowPreview(false)
     } catch (error) {
       console.error("Error saving selections:", error)
       alert("There was an error saving your selections. Please try again.")
@@ -372,94 +326,14 @@ export default function MealSelectionPage() {
     }
   }
 
-  const handleSaveAsPDF = async () => {
-    setIsPdfGenerating(true)
-    setValidationError(null)
-    setShowPreview(false)
-
-    try {
-      // First save the selections to the database
-      // Prepare meal selections for database
-      const mealSelectionsToSave = []
-
-      for (const guestId in mealSelections) {
-        for (const day in mealSelections[guestId]) {
-          const mealId = mealSelections[guestId][day]
-          if (mealId) {
-            const meal = menuItems.find((m) => m.id === mealId)
-            if (meal) {
-              mealSelectionsToSave.push({
-                guest_id: guestId,
-                day: Number.parseInt(day),
-                meal_id: mealId,
-                meal_name: meal[`name_${language}` as keyof MenuItem] || meal.name_en,
-                meal_category: meal.meal_type,
-                created_at: new Date().toISOString(),
-              })
-            }
-          }
-        }
-      }
-
-      // Save to database
-      if (mealSelectionsToSave.length > 0) {
-        const { error: saveError } = await supabase
-          .from("meal_selections")
-          .upsert(mealSelectionsToSave, { onConflict: "guest_id,day" })
-
-        if (saveError) {
-          console.error("Error saving meal selections:", saveError)
-          throw new Error("Failed to save meal selections")
-        }
-      }
-
-      // Then generate and download the PDF
-      const success = await generateAndDownloadPdf({
-        cabinNumber: cabinNumber || "",
-        guests,
-        mealSelections,
-        menuItems,
-        language,
-      })
-
-      if (!success) {
-        throw new Error("Failed to generate PDF")
-      }
-
-      // Prepare saved selections for display
-      setSavedSelections(prepareSavedSelections())
-
-      // Show confirmation screen and start countdown
-      setShowConfirmation(true)
-      setRedirectCountdown(3)
-    } catch (error) {
-      console.error("Error generating PDF:", error)
-      setValidationError("There was an error generating the PDF. Please try again.")
-    } finally {
-      setIsPdfGenerating(false)
-    }
-  }
-
-  const handleLanguageChange = useCallback((lang: "en" | "nl" | "de") => {
+  const handleLanguageChange = useCallback((lang) => {
     setLanguage(lang)
     localStorage.setItem("language", lang)
   }, [])
 
-  // Memoize menu items by day for better performance
-  const menuByDay = useMemo(() => {
-    const result: Record<number, MenuItem[]> = {}
-    menuItems.forEach((item) => {
-      if (!result[item.day]) {
-        result[item.day] = []
-      }
-      result[item.day].push(item)
-    })
-    return result
-  }, [menuItems])
-
   // Function to handle meal option click with explicit event prevention
   const handleMealOptionClick = useCallback(
-    (e: React.MouseEvent, guestId: string, day: number, mealId: number) => {
+    (e, guestId, day, mealId) => {
       e.preventDefault()
       e.stopPropagation()
       updateMealSelection(guestId, day, mealId)
@@ -469,12 +343,25 @@ export default function MealSelectionPage() {
 
   // Get meal name by ID
   const getMealName = useCallback(
-    (mealId: number) => {
+    (mealId) => {
       const meal = menuItems.find((m) => m.id === mealId)
       if (!meal) return ""
-      return meal[`name_${language}` as keyof MenuItem] || meal.name_en
+
+      // Get meal name based on language
+      if (language === "en") return meal.name_en
+      if (language === "nl") return meal.name_nl || meal.name_en
+      if (language === "de") return meal.name_de || meal.name_en
+      return meal.name_en
     },
     [menuItems, language],
+  )
+
+  // Get menu items for a specific day
+  const getMenuItemsForDay = useCallback(
+    (day) => {
+      return menuItems.filter((item) => item.day === day)
+    },
+    [menuItems],
   )
 
   if (isLoading) {
@@ -517,7 +404,7 @@ export default function MealSelectionPage() {
           <div className="max-w-2xl mx-auto text-left">
             <h3 className="text-lg font-medium mb-4">Your selections:</h3>
 
-            {guests.map((guest, guestIndex) => (
+            {guests.map((guest) => (
               <div key={guest.id} className="mb-6">
                 <h4 className="text-blue-600 font-medium">{guest.guest_name}</h4>
                 <div className="grid grid-cols-2 gap-x-8 mt-2">
@@ -572,7 +459,7 @@ export default function MealSelectionPage() {
           <select
             className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm"
             value={language}
-            onChange={(e) => handleLanguageChange(e.target.value as "en" | "nl" | "de")}
+            onChange={(e) => handleLanguageChange(e.target.value)}
           >
             <option value="en">{LANGUAGE_FLAGS.en} English</option>
             <option value="de">{LANGUAGE_FLAGS.de} Deutsch</option>
@@ -608,7 +495,7 @@ export default function MealSelectionPage() {
         {/* Guest meal selections - side by side */}
         <div className="grid grid-cols-2 gap-4">
           {guests.map((guest) => {
-            const dayMeals = menuByDay[selectedDay] || []
+            const dayMeals = getMenuItemsForDay(selectedDay)
 
             return (
               <div key={guest.id} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
@@ -624,6 +511,16 @@ export default function MealSelectionPage() {
                   {dayMeals.map((meal) => {
                     const isSelected = mealSelections[guest.id]?.[selectedDay] === meal.id
 
+                    // Get meal name based on language
+                    let mealName = meal.name_en
+                    if (language === "nl" && meal.name_nl) mealName = meal.name_nl
+                    if (language === "de" && meal.name_de) mealName = meal.name_de
+
+                    // Get meal description based on language
+                    let mealDescription = meal.description_en
+                    if (language === "nl" && meal.description_nl) mealDescription = meal.description_nl
+                    if (language === "de" && meal.description_de) mealDescription = meal.description_de
+
                     return (
                       <div
                         key={meal.id}
@@ -638,11 +535,9 @@ export default function MealSelectionPage() {
                           />
                           <div className="flex-1">
                             <Label htmlFor={`${guest.id}-${meal.id}`} className="text-sm font-medium cursor-pointer">
-                              {meal[`name_${language}` as keyof MenuItem] || meal.name_en}
+                              {mealName}
                             </Label>
-                            <p className="text-xs text-gray-600 mt-1">
-                              {meal[`description_${language}` as keyof MenuItem] || meal.description_en}
-                            </p>
+                            <p className="text-xs text-gray-600 mt-1">{mealDescription}</p>
                             <p className="mt-1 text-xs text-gray-500">{meal.meal_type}</p>
                           </div>
                         </div>
@@ -667,29 +562,16 @@ export default function MealSelectionPage() {
             Back
           </Button>
 
-          <div className="flex gap-4">
-            <Button
-              variant="outline"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                handleSave()
-              }}
-              disabled={isSaving || !validateSelections()}
-            >
-              Submit Only
-            </Button>
-            <Button
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                handleSaveAsPDF()
-              }}
-              disabled={isPdfGenerating || !validateSelections()}
-            >
-              Submit & Download PDF
-            </Button>
-          </div>
+          <Button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleSave()
+            }}
+            disabled={isSaving || !validateSelections()}
+          >
+            {isSaving ? "Saving..." : "Submit Selections"}
+          </Button>
 
           <Button
             variant="outline"
@@ -706,21 +588,6 @@ export default function MealSelectionPage() {
           <p>If you need to make changes after saving, please contact the Hotel Manager.</p>
         </div>
       </div>
-
-      {/* Preview Dialog */}
-      <MealPreviewDialog
-        isOpen={showPreview}
-        onClose={handleClosePreview}
-        cabinNumber={cabinNumber || ""}
-        guestNames={guests.map((g) => g.guest_name)}
-        mealSelections={mealSelections}
-        menuItems={menuItems}
-        language={language}
-        onSavePdf={handleSaveAsPDF}
-        onSaveSelections={handleSave}
-        isSaving={isSaving}
-        isPdfGenerating={isPdfGenerating}
-      />
     </div>
   )
 }

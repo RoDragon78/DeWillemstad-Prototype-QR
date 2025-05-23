@@ -5,4 +5,5 @@ export interface Guest {
   nationality: string
   booking_number: string
   cruise_id: string
+  table_nr?: number
 }

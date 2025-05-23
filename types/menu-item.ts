@@ -7,4 +7,5 @@ export interface MenuItem {
   name_de: string
   description_en: string
   description_nl: string
+  description_de?: string
 }
