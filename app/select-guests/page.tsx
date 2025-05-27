@@ -1,42 +1,42 @@
-import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
-import GuestSelectionForm from "@/components/guest-selection-form"
+"use client"
 
-export default async function SelectGuestsPage({
-  searchParams,
-}: {
-  searchParams: { cabin?: string }
-}) {
-  const cabinNumber = searchParams.cabin
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { GuestSelectionForm } from "@/components/guest-selection-form"
+import { clientStorage } from "@/utils/client-storage"
 
-  if (!cabinNumber) {
-    redirect("/")
-  }
+export default function SelectGuestsPage() {
+  const router = useRouter()
+  const [cabinNumber, setCabinNumber] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  const supabase = createClient()
+  useEffect(() => {
+    // Get cabin number from session storage
+    const storedCabinNumber = clientStorage.getSessionItem("cabinNumber")
 
-  // Fetch guests for this cabin
-  const { data: guests, error } = await supabase
-    .from("guest_manifest")
-    .select("guest_name, nationality, table_nr, booking_number")
-    .eq("cabin_nr", cabinNumber)
-    .eq("cruise_id", "CR2023-06") // Using the cruise ID from sample data
+    if (!storedCabinNumber) {
+      // Redirect back to home if no cabin number is found
+      router.push("/")
+      return
+    }
 
-  if (error || !guests || guests.length === 0) {
-    redirect("/")
+    setCabinNumber(storedCabinNumber)
+    setIsLoading(false)
+  }, [router])
+
+  if (isLoading) {
+    return <div className="flex min-h-screen items-center justify-center">Loading...</div>
   }
 
   return (
-    <div className="container mx-auto py-10 px-4 max-w-4xl">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Select Guests</h1>
-        <p className="text-muted-foreground mt-2">
-          Cabin {cabinNumber}: Please select the guests who would like to make dinner selections
-        </p>
-      </div>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4">
+      <div className="w-full max-w-2xl space-y-8 rounded-lg bg-white p-8 shadow-md">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold">Select Guests</h1>
+          <p className="mt-2 text-gray-600">Cabin {cabinNumber}</p>
+        </div>
 
-      <div className="max-w-md mx-auto">
-        <GuestSelectionForm guests={guests} cabinNumber={cabinNumber} />
+        <GuestSelectionForm cabinNumber={cabinNumber || ""} />
       </div>
     </div>
   )

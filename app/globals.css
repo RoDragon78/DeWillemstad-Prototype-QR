@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: white;
+  font-size: 16px;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -49,11 +61,45 @@
   }
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
+/* Fix for green checkmark positioning */
+[data-state="active"] > span {
+  position: relative;
+  z-index: 0;
+}
+
+/* Make meal options clickable */
+.meal-option {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.meal-option:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
   body {
-    @apply bg-background text-foreground;
+    font-size: 14px;
+  }
+
+  h1 {
+    font-size: 1.5rem !important;
+  }
+
+  h2 {
+    font-size: 1.25rem !important;
+  }
+
+  .text-lg {
+    font-size: 1rem !important;
+  }
+
+  .text-base {
+    font-size: 0.875rem !important;
+  }
+
+  .text-sm {
+    font-size: 0.75rem !important;
   }
 }
