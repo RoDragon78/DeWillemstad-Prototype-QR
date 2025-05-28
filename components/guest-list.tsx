@@ -1,20 +1,34 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useCallback, useRef } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import { ArrowDown, ArrowUp, Download, Search, X, Edit, Trash2, Home, Save } from "lucide-react"
+import { ArrowDown, ArrowUp, Download, Search, X, Edit, Trash2, Home, Save, Plus, RefreshCw } from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { useToast } from "@/hooks/use-toast"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 type SortDirection = "asc" | "desc"
 type SortField = "guest_name" | "cabin_nr" | "booking_number" | "table_nr" | "nationality"
 type FilterType = "all" | "assigned" | "unassigned" | "table"
 
 export function GuestList() {
+  const { toast } = useToast()
   const [guests, setGuests] = useState<any[]>([])
   const [filteredGuests, setFilteredGuests] = useState<any[]>([])
   const [sortField, setSortField] = useState<SortField>("guest_name")
@@ -40,6 +54,29 @@ export function GuestList() {
   const [editingGuestId, setEditingGuestId] = useState(null)
   const [editedGuestData, setEditedGuestData] = useState({})
   const [saving, setSaving] = useState(false)
+
+  // New state for the 5 features
+  const [formState, setFormState] = useState({
+    newGuestName: "",
+    newCabinNumber: "",
+    newNationality: "",
+    newBookingNumber: "",
+    newCruiseId: "",
+  })
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [loadingStates, setLoadingStates] = useState({
+    addGuest: false,
+    deleteMeals: false,
+    refresh: false,
+    export: false,
+    bulkAssign: false,
+  })
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: "",
+    description: "",
+    action: () => {},
+  })
 
   const fetchMealSelections = useCallback(async () => {
     try {
@@ -107,7 +144,11 @@ export function GuestList() {
   const handleCabinChange = async (guestId, newCabinNumber) => {
     try {
       if (!newCabinNumber.trim()) {
-        alert("Cabin number cannot be empty.")
+        toast({
+          title: "Error",
+          description: "Cabin number cannot be empty.",
+          variant: "destructive",
+        })
         return
       }
 
@@ -122,10 +163,18 @@ export function GuestList() {
       }
 
       await fetchGuests()
-      alert("Cabin number updated successfully.")
+      toast({
+        title: "Success",
+        description: "Cabin number updated successfully.",
+        variant: "default",
+      })
     } catch (error) {
       console.error("Error updating cabin:", error)
-      alert("Failed to update cabin number.")
+      toast({
+        title: "Error",
+        description: "Failed to update cabin number.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -239,11 +288,16 @@ export function GuestList() {
 
   const handleBulkAssignment = async () => {
     if (!bulkTableNumber || selectedGuests.size === 0) {
-      alert("Please select guests and enter a table number")
+      toast({
+        title: "Error",
+        description: "Please select guests and enter a table number",
+        variant: "destructive",
+      })
       return
     }
 
     try {
+      setLoadingStates((prev) => ({ ...prev, bulkAssign: true }))
       const tableNumber = Number.parseInt(bulkTableNumber)
       const guestIds = Array.from(selectedGuests)
 
@@ -261,10 +315,20 @@ export function GuestList() {
       setBulkTableNumber("")
       await fetchGuests()
 
-      alert(`Successfully assigned ${guestIds.length} guests to table ${tableNumber}`)
+      toast({
+        title: "Success",
+        description: `Successfully assigned ${guestIds.length} guests to table ${tableNumber}`,
+        variant: "default",
+      })
     } catch (error) {
       console.error("Error in bulk assignment:", error)
-      alert("Failed to assign guests. Please try again.")
+      toast({
+        title: "Error",
+        description: "Failed to assign guests. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, bulkAssign: false }))
     }
   }
 
@@ -394,41 +458,389 @@ export function GuestList() {
       setEditingGuestId(null)
       setEditedGuestData({})
       await fetchGuests()
+
+      toast({
+        title: "Success",
+        description: "Guest updated successfully.",
+        variant: "default",
+      })
     } catch (error) {
       console.error("Error updating guest:", error)
-      alert("Failed to update guest. Please try again.")
+      toast({
+        title: "Error",
+        description: "Failed to update guest. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setSaving(false)
     }
   }
 
   const handleDeleteGuest = async (guestId) => {
-    if (window.confirm("Are you sure you want to delete this guest?")) {
-      try {
-        const { error } = await supabase.from("guest_manifest").delete().eq("id", guestId)
+    setConfirmDialog({
+      open: true,
+      title: "Delete Guest",
+      description: "Are you sure you want to delete this guest? This action cannot be undone.",
+      action: async () => {
+        try {
+          const { error } = await supabase.from("guest_manifest").delete().eq("id", guestId)
 
-        if (error) {
+          if (error) {
+            console.error("Error deleting guest:", error)
+            throw error
+          }
+
+          setGuests((prevGuests) => prevGuests.filter((guest) => guest.id !== guestId))
+          await fetchGuests()
+
+          toast({
+            title: "Success",
+            description: "Guest deleted successfully.",
+            variant: "default",
+          })
+        } catch (error) {
           console.error("Error deleting guest:", error)
-          throw error
+          toast({
+            title: "Error",
+            description: "Failed to delete guest. Please try again.",
+            variant: "destructive",
+          })
         }
+      },
+    })
+  }
 
-        setGuests((prevGuests) => prevGuests.filter((guest) => guest.id !== guestId))
-        await fetchGuests()
-      } catch (error) {
-        console.error("Error deleting guest:", error)
-        alert("Failed to delete guest. Please try again.")
-      }
+  // FEATURE 1: Add Guest Button Functionality
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
+    setFormState({
+      ...formState,
+      [field]: e.target.value,
+    })
+
+    // Clear error when user types
+    if (formErrors[field]) {
+      setFormErrors({
+        ...formErrors,
+        [field]: "",
+      })
+    }
+  }
+
+  const validateGuestForm = () => {
+    const errors: Record<string, string> = {}
+
+    if (!formState.newGuestName.trim()) {
+      errors.newGuestName = "Guest name is required"
+    }
+
+    if (!formState.newCabinNumber.trim()) {
+      errors.newCabinNumber = "Cabin number is required"
+    }
+
+    return errors
+  }
+
+  const handleAddGuest = async () => {
+    const errors = validateGuestForm()
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
+      return
+    }
+
+    try {
+      setLoadingStates((prev) => ({ ...prev, addGuest: true }))
+
+      // Insert new guest into Supabase
+      const { data, error } = await supabase
+        .from("guest_manifest")
+        .insert([
+          {
+            guest_name: formState.newGuestName,
+            cabin_nr: formState.newCabinNumber,
+            nationality: formState.newNationality,
+            booking_number: formState.newBookingNumber,
+            cruise_id: formState.newCruiseId,
+          },
+        ])
+        .select()
+
+      if (error) throw error
+
+      // Clear form
+      setFormState({
+        newGuestName: "",
+        newCabinNumber: "",
+        newNationality: "",
+        newBookingNumber: "",
+        newCruiseId: "",
+      })
+
+      // Refresh guest list
+      await fetchGuests()
+
+      toast({
+        title: "Success",
+        description: "Guest added successfully!",
+        variant: "default",
+      })
+    } catch (error) {
+      console.error("Error adding guest:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add guest. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, addGuest: false }))
+    }
+  }
+
+  // FEATURE 2: Delete Meal Choices
+  const handleDeleteMealChoices = async (guestId: string, guestName: string) => {
+    try {
+      setLoadingStates((prev) => ({ ...prev, deleteMeals: true }))
+
+      // Delete all meal choices for this guest
+      const { error } = await supabase.from("meal_selections").delete().eq("guest_id", guestId)
+
+      if (error) throw error
+
+      // Refresh meal selections data
+      await fetchMealSelections()
+
+      toast({
+        title: "Success",
+        description: `Meal choices for ${guestName} have been deleted.`,
+        variant: "default",
+      })
+    } catch (error) {
+      console.error("Error deleting meal choices:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete meal choices. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, deleteMeals: false }))
+    }
+  }
+
+  const confirmDeleteMealChoices = (guestId: string, guestName: string) => {
+    setConfirmDialog({
+      open: true,
+      title: "Delete Meal Choices",
+      description: `Are you sure you want to delete all meal choices for ${guestName}? This action cannot be undone.`,
+      action: () => {
+        handleDeleteMealChoices(guestId, guestName)
+      },
+    })
+  }
+
+  // FEATURE 3: Implement Refresh
+  const handleRefresh = async () => {
+    try {
+      setLoadingStates((prev) => ({ ...prev, refresh: true }))
+
+      // Refresh all data
+      await Promise.all([fetchGuests(), fetchMealSelections()])
+
+      toast({
+        title: "Success",
+        description: "Data refreshed successfully.",
+        variant: "default",
+      })
+    } catch (error) {
+      console.error("Error refreshing data:", error)
+      toast({
+        title: "Error",
+        description: "Failed to refresh data. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, refresh: false }))
+    }
+  }
+
+  // FEATURE 4: Export Cabin Report
+  const exportCabinReport = () => {
+    try {
+      setLoadingStates((prev) => ({ ...prev, export: true }))
+
+      // Group guests by cabin
+      const cabinGroups: Record<string, any[]> = {}
+      guests.forEach((guest) => {
+        const cabinNr = guest.cabin_nr || "Unknown"
+        if (!cabinGroups[cabinNr]) {
+          cabinGroups[cabinNr] = []
+        }
+        cabinGroups[cabinNr].push(guest)
+      })
+
+      // Prepare CSV content
+      const headers = ["Cabin", "Guest Name", "Table", "Nationality", "Booking Number", "Meal Status", "Days Selected"]
+      const rows: string[][] = []
+
+      // Add data rows
+      Object.entries(cabinGroups).forEach(([cabin, cabinGuests]) => {
+        cabinGuests.forEach((guest) => {
+          const guestMeals = mealSelections[guest.id] || {}
+          const daysSelected = Object.keys(guestMeals).length
+          const mealStatus = daysSelected > 0 ? (daysSelected >= 6 ? "Complete" : "Partial") : "None"
+
+          rows.push([
+            cabin,
+            guest.guest_name || "",
+            guest.table_nr?.toString() || "Unassigned",
+            guest.nationality || "",
+            guest.booking_number || "",
+            mealStatus,
+            daysSelected.toString(),
+          ])
+        })
+      })
+
+      // Convert to CSV
+      const csvContent = [headers.join(","), ...rows.map((row) => row.map((cell) => `"${cell}"`).join(","))].join("\n")
+
+      // Create and download file
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      const timestamp = new Date().toISOString().split("T")[0]
+      link.setAttribute("href", url)
+      link.setAttribute("download", `cabin_report_${timestamp}.csv`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast({
+        title: "Success",
+        description: "Cabin report exported successfully.",
+        variant: "default",
+      })
+    } catch (error) {
+      console.error("Error exporting cabin report:", error)
+      toast({
+        title: "Error",
+        description: "Failed to export cabin report. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, export: false }))
     }
   }
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-4 mt-6">
+      {/* Quick Add Guest Form - FEATURE 1 */}
+      <div className="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-100">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Plus className="h-5 w-5" />
+          Quick Add Guest
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div>
+            <Input
+              placeholder="Guest Name"
+              value={formState.newGuestName}
+              onChange={(e) => handleFormChange(e, "newGuestName")}
+              className={formErrors.newGuestName ? "border-red-500" : ""}
+            />
+            {formErrors.newGuestName && <p className="text-xs text-red-500 mt-1">{formErrors.newGuestName}</p>}
+          </div>
+          <div>
+            <Input
+              placeholder="Cabin Number"
+              value={formState.newCabinNumber}
+              onChange={(e) => handleFormChange(e, "newCabinNumber")}
+              className={formErrors.newCabinNumber ? "border-red-500" : ""}
+            />
+            {formErrors.newCabinNumber && <p className="text-xs text-red-500 mt-1">{formErrors.newCabinNumber}</p>}
+          </div>
+          <Input
+            placeholder="Nationality"
+            value={formState.newNationality}
+            onChange={(e) => handleFormChange(e, "newNationality")}
+          />
+          <Input
+            placeholder="Booking Number"
+            value={formState.newBookingNumber}
+            onChange={(e) => handleFormChange(e, "newBookingNumber")}
+          />
+          <Input
+            placeholder="Cruise ID"
+            value={formState.newCruiseId}
+            onChange={(e) => handleFormChange(e, "newCruiseId")}
+          />
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <Button onClick={handleAddGuest} disabled={loadingStates.addGuest} className="flex items-center gap-2">
+            {loadingStates.addGuest ? (
+              <>
+                <LoadingSpinner size={16} />
+                Adding...
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4" />
+                Add Guest
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold">Guest List</h2>
         <div className="flex items-center gap-2">
+          {/* FEATURE 3: Refresh Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={loadingStates.refresh}
+            className="flex items-center gap-1"
+          >
+            {loadingStates.refresh ? (
+              <>
+                <LoadingSpinner size={14} />
+                Refreshing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </>
+            )}
+          </Button>
+
+          {/* FEATURE 4: Export Cabin Report */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportCabinReport}
+            disabled={loadingStates.export}
+            className="flex items-center gap-1"
+          >
+            {loadingStates.export ? (
+              <>
+                <LoadingSpinner size={14} />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4" />
+                Export Cabin Report
+              </>
+            )}
+          </Button>
+
           <Button variant="outline" size="sm" onClick={exportToCSV} className="flex items-center gap-1">
             <Download className="h-4 w-4" />
-            Export
+            Export Guest List
           </Button>
         </div>
       </div>
@@ -512,7 +924,7 @@ export function GuestList() {
                 <SelectValue placeholder="Nationality" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Nationalities</SelectItem>
+                <SelectItem value="">All Nationalities</SelectItem>
                 {availableNationalities.map((nationality) => (
                   <SelectItem key={nationality} value={nationality}>
                     {nationality}
@@ -561,8 +973,15 @@ export function GuestList() {
                 onChange={(e) => setBulkTableNumber(e.target.value)}
                 className="w-32 h-8"
               />
-              <Button size="sm" onClick={handleBulkAssignment}>
-                Assign to Table
+              <Button size="sm" onClick={handleBulkAssignment} disabled={loadingStates.bulkAssign}>
+                {loadingStates.bulkAssign ? (
+                  <>
+                    <LoadingSpinner size={14} className="mr-1" />
+                    Assigning...
+                  </>
+                ) : (
+                  "Assign to Table"
+                )}
               </Button>
               <Button size="sm" variant="outline" onClick={() => setSelectedGuests(new Set())}>
                 Clear Selection
@@ -599,28 +1018,37 @@ export function GuestList() {
                     { id: "table_nr", label: "Table" },
                     { id: "nationality", label: "Nationality" },
                     { id: "meal_status", label: "Meal Status" },
+                    { id: "meals", label: "Meals" }, // FEATURE 2: New column for meal actions
                     { id: "actions", label: "Actions" },
                   ].map((column) => (
                     <th
                       key={column.id}
                       onClick={() =>
-                        column.id !== "meal_status" && column.id !== "actions" && handleSort(column.id as SortField)
+                        column.id !== "meal_status" &&
+                        column.id !== "actions" &&
+                        column.id !== "meals" &&
+                        handleSort(column.id as SortField)
                       }
                       className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
-                        column.id !== "meal_status" && column.id !== "actions" ? "cursor-pointer hover:bg-gray-100" : ""
+                        column.id !== "meal_status" && column.id !== "actions" && column.id !== "meals"
+                          ? "cursor-pointer hover:bg-gray-100"
+                          : ""
                       }`}
                     >
                       <div className="flex items-center">
                         {column.label}
-                        {sortField === column.id && column.id !== "meal_status" && column.id !== "actions" && (
-                          <span className="ml-1">
-                            {sortDirection === "asc" ? (
-                              <ArrowUp className="h-3 w-3" />
-                            ) : (
-                              <ArrowDown className="h-3 w-3" />
-                            )}
-                          </span>
-                        )}
+                        {sortField === column.id &&
+                          column.id !== "meal_status" &&
+                          column.id !== "actions" &&
+                          column.id !== "meals" && (
+                            <span className="ml-1">
+                              {sortDirection === "asc" ? (
+                                <ArrowUp className="h-3 w-3" />
+                              ) : (
+                                <ArrowDown className="h-3 w-3" />
+                              )}
+                            </span>
+                          )}
                       </div>
                     </th>
                   ))}
@@ -706,6 +1134,25 @@ export function GuestList() {
                             {mealStatus.status} ({mealStatus.count}/6)
                           </Badge>
                         </td>
+                        {/* FEATURE 2: Delete Meal Choices */}
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                          <div className="flex items-center gap-2">
+                            {mealSelections[guest.id] && Object.keys(mealSelections[guest.id]).length > 0 ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => confirmDeleteMealChoices(guest.id, guest.guest_name)}
+                                disabled={loadingStates.deleteMeals}
+                                title="Delete all meal choices"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-gray-500">No meals</span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm">
                           <div className="col-span-1 flex gap-1">
                             {isEditing ? (
@@ -766,7 +1213,7 @@ export function GuestList() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
                       No guests found matching the current filters.
                     </td>
                   </tr>
@@ -858,6 +1305,27 @@ export function GuestList() {
           </div>
         </>
       )}
+
+      {/* FEATURE 5: Confirmation Dialog */}
+      <AlertDialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDialog.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                confirmDialog.action()
+                setConfirmDialog({ ...confirmDialog, open: false })
+              }}
+            >
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
