@@ -207,7 +207,7 @@ export function GuestList() {
     }
 
     // Apply nationality filter
-    if (filterNationality) {
+    if (filterNationality && filterNationality !== "all") {
       result = result.filter((guest) => guest.nationality === filterNationality)
     }
 
@@ -358,7 +358,7 @@ export function GuestList() {
       dataToExport = dataToExport.filter((guest) => guest.table_nr === Number.parseInt(filterTable))
     }
 
-    if (filterNationality) {
+    if (filterNationality && filterNationality !== "all") {
       dataToExport = dataToExport.filter((guest) => guest.nationality === filterNationality)
     }
 
@@ -924,7 +924,7 @@ export function GuestList() {
                 <SelectValue placeholder="Nationality" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Nationalities</SelectItem>
+                <SelectItem value="all">All Nationalities</SelectItem>
                 {availableNationalities.map((nationality) => (
                   <SelectItem key={nationality} value={nationality}>
                     {nationality}
