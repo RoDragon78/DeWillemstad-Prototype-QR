@@ -1,6 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { redirect } from "next/navigation"
 
 export async function loginAction(formData: FormData) {
@@ -18,6 +19,7 @@ export async function loginAction(formData: FormData) {
   }
 
   try {
+    // Use regular client for user authentication
     const supabase = await createClient()
     console.log("🔍 LOGIN DEBUG: Supabase client created")
 
@@ -44,10 +46,13 @@ export async function loginAction(formData: FormData) {
       return { error: "Authentication failed" }
     }
 
-    // Step 2: Check admin privileges
+    // Step 2: Check admin privileges using admin client (bypasses RLS)
     console.log("🔍 LOGIN DEBUG: Checking admin privileges for user:", authData.user.id)
 
-    const { data: adminUser, error: adminError } = await supabase
+    const adminSupabase = createAdminClient()
+    console.log("🔍 LOGIN DEBUG: Admin client created")
+
+    const { data: adminUser, error: adminError } = await adminSupabase
       .from("admin_users")
       .select("*")
       .eq("user_id", authData.user.id)
@@ -72,9 +77,9 @@ export async function loginAction(formData: FormData) {
       return { error: "Access denied. Admin privileges required." }
     }
 
-    // Step 3: Update login stats
+    // Step 3: Update login stats using admin client
     console.log("🔍 LOGIN DEBUG: Updating login stats...")
-    const { error: updateError } = await supabase
+    const { error: updateError } = await adminSupabase
       .from("admin_users")
       .update({
         last_login: new Date().toISOString(),
