@@ -4,8 +4,8 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Users, Calendar, ChefHat, LogOut } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
+import { Users, Calendar, ChefHat, LogOut, Download } from "lucide-react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useRouter } from "next/navigation"
 
 interface MealChoice {
@@ -22,7 +22,7 @@ export default function AdminDashboard() {
   const [mealChoices, setMealChoices] = useState<MealChoice[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = createClientComponentClient()
 
   useEffect(() => {
     loadMealChoices()
@@ -49,6 +49,29 @@ export default function AdminDashboard() {
     router.push("/admin/login")
   }
 
+  const exportData = () => {
+    const csv = [
+      ["Cabin", "Guest Index", "Day", "Meal Type", "Meal Name", "Submitted At"],
+      ...mealChoices.map((choice) => [
+        choice.cabin_nr,
+        choice.guest_index,
+        choice.day,
+        choice.meal_type,
+        choice.meal_name,
+        choice.submitted_at,
+      ]),
+    ]
+      .map((row) => row.join(","))
+      .join("\n")
+
+    const blob = new Blob([csv], { type: "text/csv" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `meal-selections-${new Date().toISOString().split("T")[0]}.csv`
+    a.click()
+  }
+
   const groupedChoices = mealChoices.reduce(
     (acc, choice) => {
       const key = `${choice.cabin_nr}-${choice.day}`
@@ -69,10 +92,16 @@ export default function AdminDashboard() {
             <h1 className="text-3xl font-bold">Admin Dashboard</h1>
             <p className="text-gray-600">Meal Selection Management</p>
           </div>
-          <Button variant="outline" onClick={handleLogout}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={exportData}>
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+            <Button variant="outline" onClick={handleLogout}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
+          </div>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6 mb-8">

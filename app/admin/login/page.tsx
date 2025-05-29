@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, Shield } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState("draguloiul@yahoo.com")
@@ -17,7 +17,7 @@ export default function AdminLoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = createClientComponentClient()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,7 +38,7 @@ export default function AdminLoginPage() {
       }
 
       if (authData.user) {
-        // Check if user is admin
+        // Check if user is admin (RLS is now disabled, so this should work)
         const { data: adminUser, error: adminError } = await supabase
           .from("admin_users")
           .select("*")

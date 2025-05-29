@@ -10,14 +10,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Anchor, AlertCircle } from "lucide-react"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/client"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 export default function HomePage() {
   const [cabinNumber, setCabinNumber] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = createClientComponentClient()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -50,7 +50,20 @@ export default function HomePage() {
         return
       }
 
-      // Store cabin data and navigate to meal selection
+      // Check if cabin already has meal choices
+      const { data: existingChoices } = await supabase
+        .from("meal_choices")
+        .select("id")
+        .eq("cabin_nr", cabinNumber.trim())
+        .limit(1)
+
+      if (existingChoices && existingChoices.length > 0) {
+        setError("This cabin already has meal selections. Please contact staff for changes.")
+        setIsLoading(false)
+        return
+      }
+
+      // Store cabin data and navigate
       localStorage.setItem("selectedCabin", cabinNumber.trim())
       localStorage.setItem("cabinGuests", JSON.stringify(cabinData))
       router.push("/meal-selection")
