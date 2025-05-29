@@ -1,6 +1,16 @@
+"use client"
+
+import { SupabaseDebug } from "@/components/supabase-debug"
+import { useEffect } from "react"
+import { supabaseCleanup } from "@/utils/supabase-cleanup"
 import { loginAction } from "./actions"
 
 export default function AdminLogin() {
+  useEffect(() => {
+    // Automatically clear corrupted data on page load
+    supabaseCleanup.clearCorrupted()
+  }, [])
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full space-y-8">
@@ -51,6 +61,7 @@ export default function AdminLogin() {
           </div>
         </form>
       </div>
+      <SupabaseDebug />
     </div>
   )
 }
