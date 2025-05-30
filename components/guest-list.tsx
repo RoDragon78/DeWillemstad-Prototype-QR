@@ -1,21 +1,10 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useCallback, useRef } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import {
-  ArrowDown,
-  ArrowUp,
-  Download,
-  Search,
-  X,
-  Edit,
-  Trash2,
-  Home,
-  Save,
-  Plus,
-  RefreshCw,
-  Utensils,
-} from "lucide-react"
+import { ArrowDown, ArrowUp, Download, Search, X, Edit, Trash2, Home, Save, Plus, RefreshCw } from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -187,75 +176,6 @@ export function GuestList() {
         variant: "destructive",
       })
     }
-  }
-
-  const handleFormChange = (e, field) => {
-    setFormState({
-      ...formState,
-      [field]: e.target.value,
-    })
-  }
-
-  const handleAddGuest = async () => {
-    setLoadingStates((prev) => ({ ...prev, addGuest: true }))
-    try {
-      const { error } = await supabase.from("guest_manifest").insert([
-        {
-          guest_name: formState.newGuestName,
-          cabin_nr: formState.newCabinNumber,
-          nationality: formState.newNationality,
-          booking_number: formState.newBookingNumber,
-          cruise_id: formState.newCruiseId,
-        },
-      ])
-
-      if (error) {
-        console.error("Error adding guest:", error)
-        throw error
-      }
-
-      await fetchGuests()
-
-      toast({
-        title: "Success",
-        description: "Guest added successfully.",
-        variant: "default",
-      })
-    } catch (error) {
-      console.error("Error adding guest:", error)
-      toast({
-        title: "Error",
-        description: "Failed to add guest. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, addGuest: false }))
-    }
-  }
-
-  const handleRefresh = async () => {
-    setLoadingStates((prev) => ({ ...prev, refresh: true }))
-    try {
-      await fetchGuests()
-    } catch (error) {
-      console.error("Error refreshing guests:", error)
-      toast({
-        title: "Error",
-        description: "Failed to refresh guest list. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, refresh: false }))
-    }
-  }
-
-  const exportCabinReport = () => {
-    // Placeholder for export cabin report functionality
-    toast({
-      title: "Info",
-      description: "Export Cabin Report functionality is not implemented yet.",
-      variant: "default",
-    })
   }
 
   // Apply filters and search
@@ -590,44 +510,225 @@ export function GuestList() {
     })
   }
 
-  // NEW: Delete Meal Choices Function
+  // FEATURE 1: Add Guest Button Functionality
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
+    setFormState({
+      ...formState,
+      [field]: e.target.value,
+    })
+
+    // Clear error when user types
+    if (formErrors[field]) {
+      setFormErrors({
+        ...formErrors,
+        [field]: "",
+      })
+    }
+  }
+
+  const validateGuestForm = () => {
+    const errors: Record<string, string> = {}
+
+    if (!formState.newGuestName.trim()) {
+      errors.newGuestName = "Guest name is required"
+    }
+
+    if (!formState.newCabinNumber.trim()) {
+      errors.newCabinNumber = "Cabin number is required"
+    }
+
+    return errors
+  }
+
+  const handleAddGuest = async () => {
+    const errors = validateGuestForm()
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
+      return
+    }
+
+    try {
+      setLoadingStates((prev) => ({ ...prev, addGuest: true }))
+
+      // Insert new guest into Supabase
+      const { data, error } = await supabase
+        .from("guest_manifest")
+        .insert([
+          {
+            guest_name: formState.newGuestName,
+            cabin_nr: formState.newCabinNumber,
+            nationality: formState.newNationality,
+            booking_number: formState.newBookingNumber,
+            cruise_id: formState.newCruiseId,
+          },
+        ])
+        .select()
+
+      if (error) throw error
+
+      // Clear form
+      setFormState({
+        newGuestName: "",
+        newCabinNumber: "",
+        newNationality: "",
+        newBookingNumber: "",
+        newCruiseId: "",
+      })
+
+      // Refresh guest list
+      await fetchGuests()
+
+      toast({
+        title: "Success",
+        description: "Guest added successfully!",
+        variant: "default",
+      })
+    } catch (error) {
+      console.error("Error adding guest:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add guest. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, addGuest: false }))
+    }
+  }
+
+  // FEATURE 2: Delete Meal Choices
   const handleDeleteMealChoices = async (guestId: string, guestName: string) => {
+    try {
+      setLoadingStates((prev) => ({ ...prev, deleteMeals: true }))
+
+      // Delete all meal choices for this guest
+      const { error } = await supabase.from("meal_selections").delete().eq("guest_id", guestId)
+
+      if (error) throw error
+
+      // Refresh meal selections data
+      await fetchMealSelections()
+
+      toast({
+        title: "Success",
+        description: `Meal choices for ${guestName} have been deleted.`,
+        variant: "default",
+      })
+    } catch (error) {
+      console.error("Error deleting meal choices:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete meal choices. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, deleteMeals: false }))
+    }
+  }
+
+  const confirmDeleteMealChoices = (guestId: string, guestName: string) => {
     setConfirmDialog({
       open: true,
       title: "Delete Meal Choices",
-      description: `Are you sure you want to delete ALL meal choices for ${guestName}? This will remove their selections for the entire week and cannot be undone.`,
-      action: async () => {
-        try {
-          setLoadingStates((prev) => ({ ...prev, deleteMeals: true }))
-
-          // Delete all meal selections for this guest using guest_id
-          const { error } = await supabase.from("meal_selections").delete().eq("guest_id", guestId)
-
-          if (error) {
-            console.error("Error deleting meal choices:", error)
-            throw error
-          }
-
-          // Refresh meal selections data
-          await fetchMealSelections()
-
-          toast({
-            title: "Success",
-            description: `All meal choices for ${guestName} have been deleted.`,
-            variant: "default",
-          })
-        } catch (error) {
-          console.error("Error deleting meal choices:", error)
-          toast({
-            title: "Error",
-            description: "Failed to delete meal choices. Please try again.",
-            variant: "destructive",
-          })
-        } finally {
-          setLoadingStates((prev) => ({ ...prev, deleteMeals: false }))
-        }
+      description: `Are you sure you want to delete all meal choices for ${guestName}? This action cannot be undone.`,
+      action: () => {
+        handleDeleteMealChoices(guestId, guestName)
       },
     })
+  }
+
+  // FEATURE 3: Implement Refresh
+  const handleRefresh = async () => {
+    try {
+      setLoadingStates((prev) => ({ ...prev, refresh: true }))
+
+      // Refresh all data
+      await Promise.all([fetchGuests(), fetchMealSelections()])
+
+      toast({
+        title: "Success",
+        description: "Data refreshed successfully.",
+        variant: "default",
+      })
+    } catch (error) {
+      console.error("Error refreshing data:", error)
+      toast({
+        title: "Error",
+        description: "Failed to refresh data. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, refresh: false }))
+    }
+  }
+
+  // FEATURE 4: Export Cabin Report
+  const exportCabinReport = () => {
+    try {
+      setLoadingStates((prev) => ({ ...prev, export: true }))
+
+      // Group guests by cabin
+      const cabinGroups: Record<string, any[]> = {}
+      guests.forEach((guest) => {
+        const cabinNr = guest.cabin_nr || "Unknown"
+        if (!cabinGroups[cabinNr]) {
+          cabinGroups[cabinNr] = []
+        }
+        cabinGroups[cabinNr].push(guest)
+      })
+
+      // Prepare CSV content
+      const headers = ["Cabin", "Guest Name", "Table", "Nationality", "Booking Number", "Meal Status", "Days Selected"]
+      const rows: string[][] = []
+
+      // Add data rows
+      Object.entries(cabinGroups).forEach(([cabin, cabinGuests]) => {
+        cabinGuests.forEach((guest) => {
+          const guestMeals = mealSelections[guest.id] || {}
+          const daysSelected = Object.keys(guestMeals).length
+          const mealStatus = daysSelected > 0 ? (daysSelected >= 6 ? "Complete" : "Partial") : "None"
+
+          rows.push([
+            cabin,
+            guest.guest_name || "",
+            guest.table_nr?.toString() || "Unassigned",
+            guest.nationality || "",
+            guest.booking_number || "",
+            mealStatus,
+            daysSelected.toString(),
+          ])
+        })
+      })
+
+      // Convert to CSV
+      const csvContent = [headers.join(","), ...rows.map((row) => row.map((cell) => `"${cell}"`).join(","))].join("\n")
+
+      // Create and download file
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      const timestamp = new Date().toISOString().split("T")[0]
+      link.setAttribute("href", url)
+      link.setAttribute("download", `cabin_report_${timestamp}.csv`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast({
+        title: "Success",
+        description: "Cabin report exported successfully.",
+        variant: "default",
+      })
+    } catch (error) {
+      console.error("Error exporting cabin report:", error)
+      toast({
+        title: "Error",
+        description: "Failed to export cabin report. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, export: false }))
+    }
   }
 
   return (
@@ -767,7 +868,7 @@ export function GuestList() {
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          <div className="w-32">
+          <div className="w-40">
             <Select
               value={filterType}
               onValueChange={(value) => {
@@ -789,7 +890,7 @@ export function GuestList() {
           </div>
 
           {filterType === "table" && (
-            <div className="w-28">
+            <div className="w-32">
               <Select
                 value={filterTable}
                 onValueChange={(value) => {
@@ -798,7 +899,7 @@ export function GuestList() {
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Table" />
+                  <SelectValue placeholder="Select Table" />
                 </SelectTrigger>
                 <SelectContent>
                   {availableTables.map((table) => (
@@ -811,7 +912,7 @@ export function GuestList() {
             </div>
           )}
 
-          <div className="w-32">
+          <div className="w-40">
             <Select
               value={filterNationality}
               onValueChange={(value) => {
@@ -823,7 +924,7 @@ export function GuestList() {
                 <SelectValue placeholder="Nationality" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Nations</SelectItem>
+                <SelectItem value="all">All Nationalities</SelectItem>
                 {availableNationalities.map((nationality) => (
                   <SelectItem key={nationality} value={nationality}>
                     {nationality}
@@ -833,7 +934,7 @@ export function GuestList() {
             </Select>
           </div>
 
-          <div className="w-32">
+          <div className="w-40">
             <Select
               value={filterMealStatus}
               onValueChange={(value) => {
@@ -845,9 +946,9 @@ export function GuestList() {
                 <SelectValue placeholder="Meal Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Meals</SelectItem>
+                <SelectItem value="all">All Meal Status</SelectItem>
                 <SelectItem value="with-meals">With Meals</SelectItem>
-                <SelectItem value="without-meals">No Meals</SelectItem>
+                <SelectItem value="without-meals">Without Meals</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -898,7 +999,7 @@ export function GuestList() {
             <table ref={tableRef} className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-2 py-3 text-left w-8">
+                  <th className="px-4 py-3 text-left">
                     <Checkbox
                       checked={selectedGuests.size === filteredGuests.length && filteredGuests.length > 0}
                       onCheckedChange={(checked) => {
@@ -911,14 +1012,14 @@ export function GuestList() {
                     />
                   </th>
                   {[
-                    { id: "guest_name", label: "Guest Name", width: "w-48" },
-                    { id: "cabin_nr", label: "Cabin", width: "w-16" },
-                    { id: "booking_number", label: "Booking", width: "w-28" },
-                    { id: "table_nr", label: "Table", width: "w-16" },
-                    { id: "nationality", label: "Nation", width: "w-20" },
-                    { id: "meal_status", label: "Meal Status", width: "w-32" },
-                    { id: "meals", label: "Meals", width: "w-20" },
-                    { id: "actions", label: "Actions", width: "w-32" },
+                    { id: "guest_name", label: "Guest Name" },
+                    { id: "cabin_nr", label: "Cabin" },
+                    { id: "booking_number", label: "Booking" },
+                    { id: "table_nr", label: "Table" },
+                    { id: "nationality", label: "Nationality" },
+                    { id: "meal_status", label: "Meal Status" },
+                    { id: "meals", label: "Meals" }, // FEATURE 2: New column for meal actions
+                    { id: "actions", label: "Actions" },
                   ].map((column) => (
                     <th
                       key={column.id}
@@ -928,7 +1029,7 @@ export function GuestList() {
                         column.id !== "meals" &&
                         handleSort(column.id as SortField)
                       }
-                      className={`px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${column.width} ${
+                      className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
                         column.id !== "meal_status" && column.id !== "actions" && column.id !== "meals"
                           ? "cursor-pointer hover:bg-gray-100"
                           : ""
@@ -960,7 +1061,7 @@ export function GuestList() {
                     const mealStatus = getMealSelectionStatus(guest.id)
                     return (
                       <tr key={guest.id} className="hover:bg-gray-50">
-                        <td className="px-2 py-3 whitespace-nowrap">
+                        <td className="px-4 py-3 whitespace-nowrap">
                           <Checkbox
                             checked={selectedGuests.has(guest.id)}
                             onCheckedChange={(checked) => {
@@ -974,96 +1075,86 @@ export function GuestList() {
                             }}
                           />
                         </td>
-                        <td className="px-2 py-3 whitespace-nowrap text-sm">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">
                           {isEditing ? (
                             <Input
                               value={editedGuestData.guest_name || ""}
                               onChange={(e) => handleInputChange(e, "guest_name")}
-                              className="w-full text-xs"
                             />
                           ) : (
-                            <div className="truncate max-w-48" title={guest.guest_name}>
-                              {guest.guest_name || "Unknown"}
-                            </div>
+                            guest.guest_name || "Unknown"
                           )}
                         </td>
-                        <td className="px-2 py-3 whitespace-nowrap text-sm">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">
                           {isEditing ? (
                             <Input
                               value={editedGuestData.cabin_nr || ""}
                               onChange={(e) => handleInputChange(e, "cabin_nr")}
-                              className="w-full text-xs"
                             />
                           ) : (
                             guest.cabin_nr || "Unknown"
                           )}
                         </td>
-                        <td className="px-2 py-3 whitespace-nowrap text-sm">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">
                           {isEditing ? (
                             <Input
                               value={editedGuestData.booking_number || ""}
                               onChange={(e) => handleInputChange(e, "booking_number")}
-                              className="w-full text-xs"
                             />
                           ) : (
-                            <div className="truncate max-w-28" title={guest.booking_number}>
-                              {guest.booking_number || "Unknown"}
-                            </div>
+                            guest.booking_number || "Unknown"
                           )}
                         </td>
-                        <td className="px-2 py-3 whitespace-nowrap text-sm">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">
                           {isEditing ? (
                             <Input
                               value={editedGuestData.table_nr || ""}
                               onChange={(e) => handleInputChange(e, "table_nr")}
-                              className="w-full text-xs"
                             />
                           ) : guest.table_nr ? (
                             <span className="font-medium">{guest.table_nr}</span>
                           ) : (
-                            <span className="px-1 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                               Unassigned
                             </span>
                           )}
                         </td>
-                        <td className="px-2 py-3 whitespace-nowrap text-sm">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">
                           {isEditing ? (
                             <Input
                               value={editedGuestData.nationality || ""}
                               onChange={(e) => handleInputChange(e, "nationality")}
-                              className="w-full text-xs"
                             />
                           ) : (
-                            <div className="truncate max-w-20" title={guest.nationality}>
-                              {guest.nationality || "Unknown"}
-                            </div>
+                            guest.nationality || "Unknown"
                           )}
                         </td>
-                        <td className="px-2 py-3 whitespace-nowrap text-sm">
-                          <Badge className={`${mealStatus.color} text-xs px-1 py-0`}>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                          <Badge className={mealStatus.color}>
                             {mealStatus.status} ({mealStatus.count}/6)
                           </Badge>
                         </td>
-                        <td className="px-2 py-3 whitespace-nowrap text-sm">
-                          <div className="flex items-center gap-1">
+                        {/* FEATURE 2: Delete Meal Choices */}
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                          <div className="flex items-center gap-2">
                             {mealSelections[guest.id] && Object.keys(mealSelections[guest.id]).length > 0 ? (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => handleDeleteMealChoices(guest.id, guest.guest_name)}
+                                className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => confirmDeleteMealChoices(guest.id, guest.guest_name)}
                                 disabled={loadingStates.deleteMeals}
-                                title="Delete all meal choices for this guest"
+                                title="Delete all meal choices"
                               >
-                                <Utensils className="h-3 w-3" />
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                             ) : (
-                              <span className="text-xs text-gray-500 px-2">No meals</span>
+                              <span className="text-xs text-gray-500">No meals</span>
                             )}
                           </div>
                         </td>
-                        <td className="px-2 py-3 whitespace-nowrap text-sm">
-                          <div className="flex gap-1">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                          <div className="col-span-1 flex gap-1">
                             {isEditing ? (
                               <>
                                 <Button
@@ -1072,17 +1163,10 @@ export function GuestList() {
                                   className="h-6 w-6 p-0 text-green-600"
                                   onClick={saveGuestChanges}
                                   disabled={saving}
-                                  title="Save changes"
                                 >
                                   <Save className="h-3 w-3" />
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0"
-                                  onClick={cancelEdit}
-                                  title="Cancel editing"
-                                >
+                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={cancelEdit}>
                                   <X className="h-3 w-3" />
                                 </Button>
                               </>
@@ -1100,7 +1184,7 @@ export function GuestList() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-6 w-6 p-0"
+                                  className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
                                   onClick={() => {
                                     const newCabin = prompt(`Change cabin for ${guest.guest_name}:`, guest.cabin_nr)
                                     if (newCabin && newCabin !== guest.cabin_nr) {
@@ -1222,7 +1306,7 @@ export function GuestList() {
         </>
       )}
 
-      {/* Confirmation Dialog */}
+      {/* FEATURE 5: Confirmation Dialog */}
       <AlertDialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}>
         <AlertDialogContent>
           <AlertDialogHeader>
