@@ -331,7 +331,12 @@ export function FloorPlan({ tableCapacities, tableAssignments, guests, onTableUp
                       <Users className="h-4 w-4 text-blue-600" />
                       <div>
                         <div className="font-medium">{guest.guest_name}</div>
-                        <div className="text-sm text-gray-500">Cabin {guest.cabin_nr}</div>
+                        <div className="flex items-center text-sm text-gray-500">
+                          <span>Cabin {guest.cabin_nr}</span>
+                          {guest.nationality && (
+                            <span className="ml-2 px-1.5 py-0.5 bg-gray-100 rounded text-xs">{guest.nationality}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <Button
