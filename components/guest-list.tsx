@@ -59,10 +59,15 @@ export function GuestList({ initialGuests, initialMealSelections, fetchGuests, f
     export: false,
     bulkAssign: false,
   })
+  const [mealSelections, setMealSelections] = useState<MealSelection>(initialMealSelections)
 
   useEffect(() => {
     setGuests(initialGuests)
   }, [initialGuests])
+
+  useEffect(() => {
+    setMealSelections(initialMealSelections)
+  }, [initialMealSelections])
 
   useEffect(() => {
     const fetchFilteredGuests = async () => {
