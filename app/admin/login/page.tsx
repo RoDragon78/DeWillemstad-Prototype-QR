@@ -22,14 +22,14 @@ export default function LoginPage() {
     setIsLoading(true)
     setError(null)
 
-    // Simple authentication - just check if password is "admin"
-    if (password === "admin") {
+    // Simple authentication - just check if password is "Lucian8878"
+    if (password === "Lucian8878") {
       // Store authentication in localStorage
       clientStorage.setLocalItem("isAdminAuthenticated", "true")
       // Redirect to dashboard
       router.push("/admin/dashboard")
     } else {
-      setError("Invalid password. Hint: Try 'admin'")
+      setError("Invalid password. Please try again.")
     }
 
     setIsLoading(false)
