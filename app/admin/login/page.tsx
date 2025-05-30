@@ -6,68 +6,73 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Label } from "@/components/ui/label"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
+import { clientStorage } from "@/utils/client-storage"
 
-export default function AdminLogin() {
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+export default function LoginPage() {
   const router = useRouter()
+  const [password, setPassword] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleLogin = async (e: React.FormEvent) => {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setIsLoading(true)
-    setError("")
+    setError(null)
 
-    // Simple password check
+    // Simple authentication - just check if password is "admin"
     if (password === "admin") {
-      // Set a simple flag in localStorage for demo purposes
-      localStorage.setItem("adminLoggedIn", "true")
+      // Store authentication in localStorage
+      clientStorage.setLocalItem("isAdminAuthenticated", "true")
+      // Redirect to dashboard
       router.push("/admin/dashboard")
     } else {
-      setError("Invalid password. Please try again.")
+      setError("Invalid password. Hint: Try 'admin'")
     }
+
     setIsLoading(false)
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Admin Login</CardTitle>
-          <CardDescription>Sign in to access the admin dashboard</CardDescription>
-          <p className="text-sm text-blue-600">Hint: Password is "admin"</p>
-        </CardHeader>
-        <CardContent>
-          {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password"
-                required
-                disabled={isLoading}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Signing in..." : "Sign In"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4">
+      <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-6 shadow-md">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">Admin Login</h1>
+          <p className="mt-2 text-gray-600">Sign in to access the admin dashboard</p>
+        </div>
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        <form onSubmit={handleSubmit} className="mt-8 space-y-6">
+          <div>
+            <Label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              Password
+            </Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter password"
+              required
+              className="mt-1"
+            />
+          </div>
+
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? "Signing in..." : "Sign In"}
+          </Button>
+        </form>
+      </div>
     </div>
   )
 }
