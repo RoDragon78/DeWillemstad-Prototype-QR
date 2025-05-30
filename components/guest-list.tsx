@@ -159,7 +159,6 @@ export function GuestList({ initialGuests, initialMealSelections, fetchGuests, f
     })
   }
 
-  // NEW: Delete Meal Choices Function
   const handleDeleteMealChoices = async (guestId: string, guestName: string) => {
     setConfirmDialog({
       open: true,
