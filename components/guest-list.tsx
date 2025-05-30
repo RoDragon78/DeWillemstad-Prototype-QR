@@ -1,336 +1,420 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { ArrowDown, ArrowUp, Edit, Trash2, Utensils } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { useState } from "react"
+import { Edit, Trash, Utensils } from "lucide-react"
 import { toast } from "sonner"
-import { useDebounce } from "@/hooks/use-debounce"
 
+import { supabase } from "@/lib/supabase"
+import type { Guest } from "@/types"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { ConfirmDialog } from "./confirm-dialog"
-
-interface Guest {
-  id: string
-  guest_name: string
-  cabin_nr: string
-  booking_number: string
-  table_nr: string
-  nationality: string
-  meal_status: string
-}
-
-interface MealSelection {
-  [guestId: string]: {
-    [day: string]: boolean
-  }
-}
+import { Textarea } from "@/components/ui/textarea"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import * as z from "zod"
 
 interface GuestListProps {
-  initialGuests: Guest[]
-  initialMealSelections: MealSelection
-  fetchGuests: () => Promise<void>
-  fetchMealSelections: () => Promise<void>
+  guests: Guest[]
+  refetchGuests: () => void
 }
 
-export function GuestList({ initialGuests, initialMealSelections, fetchGuests, fetchMealSelections }: GuestListProps) {
-  const [guests, setGuests] = useState<Guest[]>(initialGuests)
-  const [search, setSearch] = useState("")
-  const debouncedSearch = useDebounce(search, 500)
-  const [sortColumn, setSortColumn] = useState<keyof Guest | null>(null)
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
-  const [confirmDialog, setConfirmDialog] = useState<{
-    open: boolean
-    title: string
-    description: string
-    action: () => Promise<void>
-  }>({
-    open: false,
-    title: "",
-    description: "",
-    action: async () => {},
-  })
+const formSchema = z.object({
+  guest_name: z.string().min(2, {
+    message: "Guest name must be at least 2 characters.",
+  }),
+  cabin_number: z.string().min(1, {
+    message: "Cabin number must be at least 1 character.",
+  }),
+  table_number: z.string().min(1, {
+    message: "Table number must be at least 1 character.",
+  }),
+  group_number: z.string().min(1, {
+    message: "Group number must be at least 1 character.",
+  }),
+  language: z.string().min(2, {
+    message: "Language must be at least 2 characters.",
+  }),
+  dietary_restrictions: z.string().optional(),
+  notes: z.string().optional(),
+})
+
+export function GuestList({ guests, refetchGuests }: GuestListProps) {
+  const [open, setOpen] = useState(false)
+  const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null)
   const [loadingStates, setLoadingStates] = useState({
-    addGuest: false,
-    deleteMeals: false,
-    refresh: false,
-    export: false,
-    bulkAssign: false,
+    delete: {} as Record<string, boolean>,
+    edit: {} as Record<string, boolean>,
+    deleteMeals: {} as Record<string, boolean>,
   })
-  const [mealSelections, setMealSelections] = useState<MealSelection>(initialMealSelections)
 
-  useEffect(() => {
-    setGuests(initialGuests)
-  }, [initialGuests])
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      guest_name: "",
+      cabin_number: "",
+      table_number: "",
+      group_number: "",
+      language: "",
+      dietary_restrictions: "",
+      notes: "",
+    },
+  })
 
-  useEffect(() => {
-    setMealSelections(initialMealSelections)
-  }, [initialMealSelections])
+  const handleOpen = (guest: Guest) => {
+    setSelectedGuest(guest)
+    form.reset({
+      guest_name: guest.guest_name,
+      cabin_number: guest.cabin_number,
+      table_number: guest.table_number,
+      group_number: guest.group_number,
+      language: guest.language,
+      dietary_restrictions: guest.dietary_restrictions || "",
+      notes: guest.notes || "",
+    })
+    setOpen(true)
+  }
 
-  useEffect(() => {
-    const fetchFilteredGuests = async () => {
-      if (!debouncedSearch) {
-        setGuests(initialGuests)
-        return
-      }
+  const handleClose = () => {
+    setOpen(false)
+    setSelectedGuest(null)
+  }
 
-      const { data: filteredGuests, error } = await supabase
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    if (!selectedGuest) return
+
+    setLoadingStates((prev) => ({
+      ...prev,
+      edit: { ...prev.edit, [selectedGuest.id]: true },
+    }))
+
+    try {
+      const { data, error } = await supabase
         .from("guests")
-        .like("guest_name", `%${debouncedSearch}%`)
-        .order("guest_name", { ascending: true })
+        .update({
+          guest_name: values.guest_name,
+          cabin_number: values.cabin_number,
+          table_number: values.table_number,
+          group_number: values.group_number,
+          language: values.language,
+          dietary_restrictions: values.dietary_restrictions,
+          notes: values.notes,
+        })
+        .eq("id", selectedGuest.id)
 
       if (error) {
-        console.error("Error fetching filtered guests:", error)
-        toast({
-          title: "Error",
-          description: "Failed to fetch filtered guests. Please try again.",
-          variant: "destructive",
-        })
-      } else {
-        setGuests(filteredGuests as Guest[])
+        throw error
       }
-    }
 
-    fetchFilteredGuests()
-  }, [debouncedSearch, initialGuests])
-
-  const handleSort = (column: keyof Guest) => {
-    if (column === sortColumn) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-    } else {
-      setSortColumn(column)
-      setSortDirection("asc")
+      toast({
+        title: "Success",
+        description: "Guest updated successfully.",
+        variant: "default",
+      })
+      refetchGuests()
+    } catch (error: any) {
+      console.error("Error updating guest:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update guest. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({
+        ...prev,
+        edit: { ...prev.edit, [selectedGuest.id]: false },
+      }))
+      handleClose()
     }
   }
 
-  const sortedGuests = [...guests].sort((a, b) => {
-    if (!sortColumn) return 0
-
-    const aValue = a[sortColumn]
-    const bValue = b[sortColumn]
-
-    if (typeof aValue === "string" && typeof bValue === "string") {
-      return sortDirection === "asc" ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue)
-    } else if (typeof aValue === "number" && typeof bValue === "number") {
-      return sortDirection === "asc" ? aValue - bValue : bValue - aValue
+  const handleDeleteGuest = async (guestId: string, guestName: string) => {
+    if (!confirm(`Are you sure you want to delete ${guestName}? This action cannot be undone.`)) {
+      return
     }
 
-    return 0
-  })
+    setLoadingStates((prev) => ({
+      ...prev,
+      delete: { ...prev.delete, [guestId]: true },
+    }))
 
-  const handleDeleteGuest = async (guestId: string, guestName: string) => {
-    setConfirmDialog({
-      open: true,
-      title: "Delete Guest",
-      description: `Are you sure you want to delete ${guestName}? This action cannot be undone.`,
-      action: async () => {
-        try {
-          // Optimistically remove the guest from the local state
-          setGuests((prevGuests) => prevGuests.filter((guest) => guest.id !== guestId))
+    try {
+      const { error } = await supabase.from("guests").delete().eq("id", guestId)
 
-          // Delete the guest from the database
-          const { error } = await supabase.from("guests").delete().eq("id", guestId)
+      if (error) {
+        throw error
+      }
 
-          if (error) {
-            console.error("Error deleting guest:", error)
-            // If there's an error, revert the local state
-            toast({
-              title: "Error",
-              description: "Failed to delete guest. Please try again.",
-              variant: "destructive",
-            })
-            // Re-fetch guests to revert the local state
-            await fetchGuests()
-            throw error
-          }
-
-          toast({
-            title: "Success",
-            description: `${guestName} has been deleted.`,
-            variant: "default",
-          })
-        } catch (error) {
-          console.error("Error deleting guest:", error)
-          // Handle error (e.g., show an error message)
-        }
-      },
-    })
+      toast({
+        title: "Success",
+        description: `${guestName} has been deleted.`,
+        variant: "default",
+      })
+      refetchGuests()
+    } catch (error) {
+      console.error("Error deleting guest:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete guest. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({
+        ...prev,
+        delete: { ...prev.delete, [guestId]: false },
+      }))
+    }
   }
 
   const handleDeleteMealChoices = async (guestId: string, guestName: string) => {
-    setConfirmDialog({
-      open: true,
-      title: "Delete Meal Choices",
-      description: `Are you sure you want to delete ALL meal choices for ${guestName}? This will remove their selections for the entire week and cannot be undone.`,
-      action: async () => {
-        try {
-          setLoadingStates((prev) => ({ ...prev, deleteMeals: true }))
+    if (!confirm(`Are you sure you want to delete all meal choices for ${guestName}? This action cannot be undone.`)) {
+      return
+    }
 
-          // Delete all meal selections for this guest using guest_id
-          const { error } = await supabase.from("meal_selections").delete().eq("guest_id", guestId)
+    setLoadingStates((prev) => ({
+      ...prev,
+      deleteMeals: { ...prev.deleteMeals, [guestId]: true },
+    }))
 
-          if (error) {
-            console.error("Error deleting meal choices:", error)
-            throw error
-          }
+    try {
+      const { error } = await supabase.from("meal_selections").delete().eq("guest_id", guestId)
 
-          // Refresh meal selections data
-          await fetchMealSelections()
+      if (error) {
+        throw error
+      }
 
-          toast({
-            title: "Success",
-            description: `All meal choices for ${guestName} have been deleted.`,
-            variant: "default",
-          })
-        } catch (error) {
-          console.error("Error deleting meal choices:", error)
-          toast({
-            title: "Error",
-            description: "Failed to delete meal choices. Please try again.",
-            variant: "destructive",
-          })
-        } finally {
-          setLoadingStates((prev) => ({ ...prev, deleteMeals: false }))
-        }
-      },
-    })
-  }
-
-  const mealStatusCounts = (guestId: string) => {
-    let count = 0
-    if (mealSelections && mealSelections[guestId]) {
-      Object.values(mealSelections[guestId]).forEach((value) => {
-        if (value) {
-          count++
-        }
+      toast({
+        title: "Success",
+        description: `Meal choices for ${guestName} have been deleted.`,
+        variant: "default",
       })
-    }
-
-    let color = "bg-gray-100 text-gray-500"
-
-    if (count === 0) {
-      color = "bg-gray-100 text-gray-500"
-    } else if (count < 3) {
-      color = "bg-yellow-100 text-yellow-500"
-    } else if (count < 6) {
-      color = "bg-green-100 text-green-500"
-    } else if (count === 6) {
-      color = "bg-blue-100 text-blue-500"
-    }
-
-    return {
-      count: count,
-      status: count === 6 ? "Full" : count > 0 ? "Partial" : "None",
-      color: color,
+    } catch (error) {
+      console.error("Error deleting meal choices:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete meal choices. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({
+        ...prev,
+        deleteMeals: { ...prev.deleteMeals, [guestId]: false },
+      }))
     }
   }
 
   return (
     <>
-      <ConfirmDialog confirmDialog={confirmDialog} setConfirmDialog={setConfirmDialog} />
-      <div className="flex items-center justify-between">
-        <Input
-          type="search"
-          placeholder="Search guests..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
-      <div className="relative overflow-x-auto shadow-md sm:rounded-lg">
-        <Table>
-          <TableCaption>A list of all guests.</TableCaption>
-          <TableHeader>
+      <Table>
+        <TableCaption>A list of guests.</TableCaption>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[100px]">Cabin</TableHead>
+            <TableHead>Name</TableHead>
+            <TableHead>Table</TableHead>
+            <TableHead>Group</TableHead>
+            <TableHead>Language</TableHead>
+            <TableHead>Diet</TableHead>
+            <TableHead>Notes</TableHead>
+            <TableHead className="w-[100px]">Meals</TableHead>
+            <TableHead className="w-[100px]">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {guests.length === 0 ? (
             <TableRow>
-              {[
-                { id: "guest_name", label: "Guest Name", width: "w-48" },
-                { id: "cabin_nr", label: "Cabin", width: "w-16" },
-                { id: "booking_number", label: "Booking", width: "w-28" },
-                { id: "table_nr", label: "Table", width: "w-16" },
-                { id: "nationality", label: "Nation", width: "w-20" },
-                { id: "meal_status", label: "Meal Status", width: "w-32" },
-                { id: "meals", label: "Meals", width: "w-20" },
-                { id: "actions", label: "Actions", width: "w-32" },
-              ].map((column) => (
-                <TableHead key={column.id} className={`text-left ${column.width}`}>
-                  <div className="flex items-center">
-                    <Button variant="ghost" onClick={() => handleSort(column.id as keyof Guest)}>
-                      {column.label}
-                      {sortColumn === column.id && (
-                        <>
-                          {sortDirection === "asc" ? (
-                            <ArrowUp className="ml-2 h-4 w-4" />
-                          ) : (
-                            <ArrowDown className="ml-2 h-4 w-4" />
-                          )}
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </TableHead>
-              ))}
+              <TableCell colSpan={9} className="h-24 text-center">
+                No guests found.
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedGuests.map((guest) => {
-              const mealStatus = mealStatusCounts(guest.id)
-              return (
-                <TableRow key={guest.id}>
-                  <TableCell className="font-medium">{guest.guest_name}</TableCell>
-                  <TableCell>{guest.cabin_nr}</TableCell>
-                  <TableCell>{guest.booking_number}</TableCell>
-                  <TableCell>{guest.table_nr}</TableCell>
-                  <TableCell>{guest.nationality}</TableCell>
-                  <td className="px-2 py-3 whitespace-nowrap text-sm">
-                    <Badge className={`${mealStatus.color} text-xs px-1 py-0`}>
-                      {mealStatus.status} ({mealStatus.count}/6)
-                    </Badge>
-                  </td>
-                  <td className="px-2 py-3 whitespace-nowrap text-sm">
-                    <div className="flex items-center gap-1">
-                      {mealSelections[guest.id] && Object.keys(mealSelections[guest.id]).length > 0 ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => handleDeleteMealChoices(guest.id, guest.guest_name)}
-                          disabled={loadingStates.deleteMeals}
-                          title="Delete all meal choices for this guest"
-                        >
-                          <Utensils className="h-3 w-3" />
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-gray-500 px-2">No meals</span>
-                      )}
-                    </div>
-                  </td>
-                  <TableCell className="flex items-center gap-2">
+          ) : (
+            guests.map((guest) => (
+              <TableRow key={guest.id}>
+                <TableCell className="font-medium">{guest.cabin_number}</TableCell>
+                <TableCell>{guest.guest_name}</TableCell>
+                <TableCell>{guest.table_number}</TableCell>
+                <TableCell>{guest.group_number}</TableCell>
+                <TableCell>{guest.language}</TableCell>
+                <TableCell>{guest.dietary_restrictions}</TableCell>
+                <TableCell>{guest.notes}</TableCell>
+                <TableCell className="text-center">
+                  {guest.has_meal_selections ? (
                     <Button
                       variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => handleDeleteGuest(guest.id, guest.guest_name)}
+                      size="icon"
+                      onClick={() => handleDeleteMealChoices(guest.id, guest.guest_name)}
+                      disabled={loadingStates.deleteMeals[guest.id]}
                     >
-                      <Trash2 className="h-3 w-3" />
+                      {loadingStates.deleteMeals[guest.id] ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      ) : (
+                        <Utensils className="h-4 w-4 text-orange-500" />
+                      )}
+                      <span className="sr-only">Delete meal choices</span>
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                      <Edit className="h-3 w-3" />
+                  ) : (
+                    <span className="text-xs text-gray-500">No meals</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleOpen(guest)}
+                      disabled={loadingStates.edit[guest.id]}
+                    >
+                      {loadingStates.edit[guest.id] ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      ) : (
+                        <Edit className="h-4 w-4" />
+                      )}
+                      <span className="sr-only">Edit</span>
                     </Button>
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-            {sortedGuests.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
-                  No guests found matching the current filters.
-                </td>
-              </tr>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteGuest(guest.id, guest.guest_name)}
+                      disabled={loadingStates.delete[guest.id]}
+                    >
+                      {loadingStates.delete[guest.id] ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      ) : (
+                        <Trash className="h-4 w-4 text-red-500" />
+                      )}
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Guest</DialogTitle>
+            <DialogDescription>
+              Make changes to the guest information here. Click save when you're done.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="guest_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Guest Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Guest Name" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="cabin_number"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Cabin Number</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Cabin Number" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="table_number"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Table Number</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Table Number" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="group_number"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Group Number</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Group Number" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="language"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Language</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Language" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="dietary_restrictions"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Dietary Restrictions</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Dietary Restrictions" className="resize-none" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Notes" className="resize-none" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="submit" disabled={loadingStates.edit[selectedGuest?.id || ""]}>
+                  {loadingStates.edit[selectedGuest?.id || ""] ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    "Save changes"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
