@@ -45,7 +45,7 @@ export default function AdminDashboard() {
   }
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
+    localStorage.removeItem("adminLoggedIn")
     router.push("/admin/login")
   }
 
@@ -89,8 +89,7 @@ export default function AdminDashboard() {
       <div className="max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-            <p className="text-gray-600">Meal Selection Management</p>
+            <h1 className="text-3xl font-bold">DeWillemstad Admin Dashboard</h1>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={exportData}>
@@ -104,37 +103,76 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
+        <div className="flex gap-4 mb-8">
+          <Button className="bg-blue-600 hover:bg-blue-700">
+            <Users className="h-4 w-4 mr-2" />
+            Table Assignment
+          </Button>
+          <Button variant="outline">
+            <ChefHat className="h-4 w-4 mr-2" />
+            Analytics & Insights
+          </Button>
+          <Button variant="outline">
+            <Users className="h-4 w-4 mr-2" />
+            Guest Management
+          </Button>
+          <Button variant="outline">
+            <Calendar className="h-4 w-4 mr-2" />
+            Data Tools
+          </Button>
+        </div>
+
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Control Panel</h2>
+            <Button variant="outline">
+              <Download className="h-4 w-4 mr-2" />
+              Refresh Data
+            </Button>
+          </div>
+          <div className="flex gap-4">
+            <Button className="bg-blue-600 hover:bg-blue-700">Assign Tables Automatically</Button>
+            <Button variant="destructive">Clear All Assignments</Button>
+            <Button variant="outline" className="text-green-600 border-green-600 hover:bg-green-50">
+              Import Guest Manifest
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-4 gap-6 mb-8">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Submissions</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">Total Guests</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{Object.keys(groupedChoices).length}</div>
-              <p className="text-xs text-muted-foreground">Cabin-day combinations</p>
+              <div className="text-3xl font-bold text-blue-600">86</div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Meals</CardTitle>
-              <ChefHat className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">Assigned Guests</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{mealChoices.length}</div>
-              <p className="text-xs text-muted-foreground">Individual meal selections</p>
+              <div className="text-3xl font-bold text-green-600">86</div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Unique Cabins</CardTitle>
-              <Calendar className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">Tables Used</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{new Set(mealChoices.map((c) => c.cabin_nr)).size}</div>
-              <p className="text-xs text-muted-foreground">Cabins with selections</p>
+              <div className="text-3xl font-bold text-orange-600">18</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">Unassigned Guests</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-red-600">0</div>
             </CardContent>
           </Card>
         </div>
