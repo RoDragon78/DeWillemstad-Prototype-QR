@@ -4,7 +4,20 @@ import type React from "react"
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import { ArrowDown, ArrowUp, Download, Search, X, Edit, Trash2, Home, Save, Plus, RefreshCw } from "lucide-react"
+import {
+  ArrowDown,
+  ArrowUp,
+  Download,
+  Search,
+  X,
+  Edit,
+  Trash2,
+  Home,
+  Save,
+  Plus,
+  RefreshCw,
+  Utensils,
+} from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -510,6 +523,46 @@ export function GuestList() {
     })
   }
 
+  // NEW: Delete Meal Choices Function
+  const handleDeleteMealChoices = async (guestId: string, guestName: string) => {
+    setConfirmDialog({
+      open: true,
+      title: "Delete Meal Choices",
+      description: `Are you sure you want to delete ALL meal choices for ${guestName}? This will remove their selections for the entire week and cannot be undone.`,
+      action: async () => {
+        try {
+          setLoadingStates((prev) => ({ ...prev, deleteMeals: true }))
+
+          // Delete all meal selections for this guest using guest_id
+          const { error } = await supabase.from("meal_selections").delete().eq("guest_id", guestId)
+
+          if (error) {
+            console.error("Error deleting meal choices:", error)
+            throw error
+          }
+
+          // Refresh meal selections data
+          await fetchMealSelections()
+
+          toast({
+            title: "Success",
+            description: `All meal choices for ${guestName} have been deleted.`,
+            variant: "default",
+          })
+        } catch (error) {
+          console.error("Error deleting meal choices:", error)
+          toast({
+            title: "Error",
+            description: "Failed to delete meal choices. Please try again.",
+            variant: "destructive",
+          })
+        } finally {
+          setLoadingStates((prev) => ({ ...prev, deleteMeals: false }))
+        }
+      },
+    })
+  }
+
   // FEATURE 1: Add Guest Button Functionality
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
     setFormState({
@@ -594,47 +647,6 @@ export function GuestList() {
     } finally {
       setLoadingStates((prev) => ({ ...prev, addGuest: false }))
     }
-  }
-
-  // FEATURE 2: Delete Meal Choices
-  const handleDeleteMealChoices = async (guestId: string, guestName: string) => {
-    try {
-      setLoadingStates((prev) => ({ ...prev, deleteMeals: true }))
-
-      // Delete all meal choices for this guest
-      const { error } = await supabase.from("meal_selections").delete().eq("guest_id", guestId)
-
-      if (error) throw error
-
-      // Refresh meal selections data
-      await fetchMealSelections()
-
-      toast({
-        title: "Success",
-        description: `Meal choices for ${guestName} have been deleted.`,
-        variant: "default",
-      })
-    } catch (error) {
-      console.error("Error deleting meal choices:", error)
-      toast({
-        title: "Error",
-        description: "Failed to delete meal choices. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, deleteMeals: false }))
-    }
-  }
-
-  const confirmDeleteMealChoices = (guestId: string, guestName: string) => {
-    setConfirmDialog({
-      open: true,
-      title: "Delete Meal Choices",
-      description: `Are you sure you want to delete all meal choices for ${guestName}? This action cannot be undone.`,
-      action: () => {
-        handleDeleteMealChoices(guestId, guestName)
-      },
-    })
   }
 
   // FEATURE 3: Implement Refresh
@@ -868,7 +880,7 @@ export function GuestList() {
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          <div className="w-40">
+          <div className="w-32">
             <Select
               value={filterType}
               onValueChange={(value) => {
@@ -890,7 +902,7 @@ export function GuestList() {
           </div>
 
           {filterType === "table" && (
-            <div className="w-32">
+            <div className="w-28">
               <Select
                 value={filterTable}
                 onValueChange={(value) => {
@@ -899,7 +911,7 @@ export function GuestList() {
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select Table" />
+                  <SelectValue placeholder="Table" />
                 </SelectTrigger>
                 <SelectContent>
                   {availableTables.map((table) => (
@@ -912,7 +924,7 @@ export function GuestList() {
             </div>
           )}
 
-          <div className="w-40">
+          <div className="w-32">
             <Select
               value={filterNationality}
               onValueChange={(value) => {
@@ -924,7 +936,7 @@ export function GuestList() {
                 <SelectValue placeholder="Nationality" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Nationalities</SelectItem>
+                <SelectItem value="all">All Nations</SelectItem>
                 {availableNationalities.map((nationality) => (
                   <SelectItem key={nationality} value={nationality}>
                     {nationality}
@@ -934,7 +946,7 @@ export function GuestList() {
             </Select>
           </div>
 
-          <div className="w-40">
+          <div className="w-32">
             <Select
               value={filterMealStatus}
               onValueChange={(value) => {
@@ -946,9 +958,9 @@ export function GuestList() {
                 <SelectValue placeholder="Meal Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Meal Status</SelectItem>
+                <SelectItem value="all">All Meals</SelectItem>
                 <SelectItem value="with-meals">With Meals</SelectItem>
-                <SelectItem value="without-meals">Without Meals</SelectItem>
+                <SelectItem value="without-meals">No Meals</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -999,7 +1011,7 @@ export function GuestList() {
             <table ref={tableRef} className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left">
+                  <th className="px-2 py-3 text-left w-8">
                     <Checkbox
                       checked={selectedGuests.size === filteredGuests.length && filteredGuests.length > 0}
                       onCheckedChange={(checked) => {
@@ -1012,14 +1024,14 @@ export function GuestList() {
                     />
                   </th>
                   {[
-                    { id: "guest_name", label: "Guest Name" },
-                    { id: "cabin_nr", label: "Cabin" },
-                    { id: "booking_number", label: "Booking" },
-                    { id: "table_nr", label: "Table" },
-                    { id: "nationality", label: "Nationality" },
-                    { id: "meal_status", label: "Meal Status" },
-                    { id: "meals", label: "Meals" }, // FEATURE 2: New column for meal actions
-                    { id: "actions", label: "Actions" },
+                    { id: "guest_name", label: "Guest Name", width: "w-48" },
+                    { id: "cabin_nr", label: "Cabin", width: "w-16" },
+                    { id: "booking_number", label: "Booking", width: "w-28" },
+                    { id: "table_nr", label: "Table", width: "w-16" },
+                    { id: "nationality", label: "Nation", width: "w-20" },
+                    { id: "meal_status", label: "Meal Status", width: "w-32" },
+                    { id: "meals", label: "Meals", width: "w-20" },
+                    { id: "actions", label: "Actions", width: "w-32" },
                   ].map((column) => (
                     <th
                       key={column.id}
@@ -1029,7 +1041,7 @@ export function GuestList() {
                         column.id !== "meals" &&
                         handleSort(column.id as SortField)
                       }
-                      className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
+                      className={`px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${column.width} ${
                         column.id !== "meal_status" && column.id !== "actions" && column.id !== "meals"
                           ? "cursor-pointer hover:bg-gray-100"
                           : ""
@@ -1061,7 +1073,7 @@ export function GuestList() {
                     const mealStatus = getMealSelectionStatus(guest.id)
                     return (
                       <tr key={guest.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 whitespace-nowrap">
+                        <td className="px-2 py-3 whitespace-nowrap">
                           <Checkbox
                             checked={selectedGuests.has(guest.id)}
                             onCheckedChange={(checked) => {
@@ -1075,86 +1087,96 @@ export function GuestList() {
                             }}
                           />
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <td className="px-2 py-3 whitespace-nowrap text-sm">
                           {isEditing ? (
                             <Input
                               value={editedGuestData.guest_name || ""}
                               onChange={(e) => handleInputChange(e, "guest_name")}
+                              className="w-full text-xs"
                             />
                           ) : (
-                            guest.guest_name || "Unknown"
+                            <div className="truncate max-w-48" title={guest.guest_name}>
+                              {guest.guest_name || "Unknown"}
+                            </div>
                           )}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <td className="px-2 py-3 whitespace-nowrap text-sm">
                           {isEditing ? (
                             <Input
                               value={editedGuestData.cabin_nr || ""}
                               onChange={(e) => handleInputChange(e, "cabin_nr")}
+                              className="w-full text-xs"
                             />
                           ) : (
                             guest.cabin_nr || "Unknown"
                           )}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <td className="px-2 py-3 whitespace-nowrap text-sm">
                           {isEditing ? (
                             <Input
                               value={editedGuestData.booking_number || ""}
                               onChange={(e) => handleInputChange(e, "booking_number")}
+                              className="w-full text-xs"
                             />
                           ) : (
-                            guest.booking_number || "Unknown"
+                            <div className="truncate max-w-28" title={guest.booking_number}>
+                              {guest.booking_number || "Unknown"}
+                            </div>
                           )}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <td className="px-2 py-3 whitespace-nowrap text-sm">
                           {isEditing ? (
                             <Input
                               value={editedGuestData.table_nr || ""}
                               onChange={(e) => handleInputChange(e, "table_nr")}
+                              className="w-full text-xs"
                             />
                           ) : guest.table_nr ? (
                             <span className="font-medium">{guest.table_nr}</span>
                           ) : (
-                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                            <span className="px-1 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800">
                               Unassigned
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <td className="px-2 py-3 whitespace-nowrap text-sm">
                           {isEditing ? (
                             <Input
                               value={editedGuestData.nationality || ""}
                               onChange={(e) => handleInputChange(e, "nationality")}
+                              className="w-full text-xs"
                             />
                           ) : (
-                            guest.nationality || "Unknown"
+                            <div className="truncate max-w-20" title={guest.nationality}>
+                              {guest.nationality || "Unknown"}
+                            </div>
                           )}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          <Badge className={mealStatus.color}>
+                        <td className="px-2 py-3 whitespace-nowrap text-sm">
+                          <Badge className={`${mealStatus.color} text-xs px-1 py-0`}>
                             {mealStatus.status} ({mealStatus.count}/6)
                           </Badge>
                         </td>
-                        {/* FEATURE 2: Delete Meal Choices */}
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          <div className="flex items-center gap-2">
+                        <td className="px-2 py-3 whitespace-nowrap text-sm">
+                          <div className="flex items-center gap-1">
                             {mealSelections[guest.id] && Object.keys(mealSelections[guest.id]).length > 0 ? (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => confirmDeleteMealChoices(guest.id, guest.guest_name)}
+                                className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => handleDeleteMealChoices(guest.id, guest.guest_name)}
                                 disabled={loadingStates.deleteMeals}
-                                title="Delete all meal choices"
+                                title="Delete all meal choices for this guest"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Utensils className="h-3 w-3" />
                               </Button>
                             ) : (
-                              <span className="text-xs text-gray-500">No meals</span>
+                              <span className="text-xs text-gray-500 px-2">No meals</span>
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          <div className="col-span-1 flex gap-1">
+                        <td className="px-2 py-3 whitespace-nowrap text-sm">
+                          <div className="flex gap-1">
                             {isEditing ? (
                               <>
                                 <Button
@@ -1163,10 +1185,17 @@ export function GuestList() {
                                   className="h-6 w-6 p-0 text-green-600"
                                   onClick={saveGuestChanges}
                                   disabled={saving}
+                                  title="Save changes"
                                 >
                                   <Save className="h-3 w-3" />
                                 </Button>
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={cancelEdit}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={cancelEdit}
+                                  title="Cancel editing"
+                                >
                                   <X className="h-3 w-3" />
                                 </Button>
                               </>
@@ -1306,7 +1335,7 @@ export function GuestList() {
         </>
       )}
 
-      {/* FEATURE 5: Confirmation Dialog */}
+      {/* Confirmation Dialog */}
       <AlertDialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}>
         <AlertDialogContent>
           <AlertDialogHeader>

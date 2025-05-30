@@ -1,120 +1,83 @@
 "use client"
 
 import type React from "react"
+
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle, Shield } from "lucide-react"
 
-export default function LoginPage() {
-  const router = useRouter()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+export default function AdminLogin() {
+  const [inputPassword, setInputPassword] = useState("")
+  const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const supabase = createClientComponentClient()
+  const router = useRouter()
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  const handleLogin = () => {
     setIsLoading(true)
-    setError(null)
+    setError("")
 
-    try {
-      // Sign in with Supabase
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+    // Hardcoded password as requested
+    const correctPassword = "Lucian8878"
 
-      if (error) {
-        setError(error.message)
-        return
-      }
+    if (inputPassword === correctPassword) {
+      // Set session flag and redirect
+      localStorage.setItem("adminLoggedIn", "true")
+      router.push("/admin/dashboard")
+    } else {
+      setError("Wrong password. Please try again.")
+    }
+    setIsLoading(false)
+  }
 
-      if (data.user) {
-        // Check if user is admin
-        const { data: adminUser, error: adminError } = await supabase
-          .from("admin_users")
-          .select("*")
-          .eq("user_id", data.user.id)
-          .single()
-
-        if (adminError || !adminUser) {
-          setError("Access denied. Admin privileges required.")
-          await supabase.auth.signOut()
-          return
-        }
-
-        // Redirect to dashboard
-        router.push("/admin/dashboard")
-        router.refresh()
-      }
-    } catch (error) {
-      console.error("Login error:", error)
-      setError("An unexpected error occurred. Please try again.")
-    } finally {
-      setIsLoading(false)
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleLogin()
     }
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4">
-      <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-6 shadow-md">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">Admin Login</h1>
-          <p className="mt-2 text-gray-600">Sign in to access the admin dashboard</p>
-        </div>
-
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-          <div>
-            <Label htmlFor="email" className="block text-sm font-medium text-gray-700">
-              Email
-            </Label>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email"
-              required
-              className="mt-1"
-            />
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <div className="flex justify-center mb-4">
+            <div className="h-16 w-16 rounded-full bg-red-500 flex items-center justify-center">
+              <Shield className="h-10 w-10 text-white" />
+            </div>
           </div>
+          <CardTitle className="text-2xl">Admin Login</CardTitle>
+          <CardDescription>Enter password to access the admin dashboard</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-          <div>
-            <Label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              Password
-            </Label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password"
-              required
-              className="mt-1"
-            />
+          <div className="space-y-4">
+            <div>
+              <Input
+                type="password"
+                value={inputPassword}
+                onChange={(e) => setInputPassword(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder=""
+                disabled={isLoading}
+                className="w-full"
+              />
+            </div>
+
+            <Button onClick={handleLogin} disabled={isLoading || !inputPassword} className="w-full">
+              {isLoading ? "Logging in..." : "Login"}
+            </Button>
           </div>
-
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? "Signing in..." : "Sign In"}
-          </Button>
-        </form>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
