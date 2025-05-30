@@ -1,7 +1,5 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect, useCallback, useRef } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import {
@@ -189,6 +187,75 @@ export function GuestList() {
         variant: "destructive",
       })
     }
+  }
+
+  const handleFormChange = (e, field) => {
+    setFormState({
+      ...formState,
+      [field]: e.target.value,
+    })
+  }
+
+  const handleAddGuest = async () => {
+    setLoadingStates((prev) => ({ ...prev, addGuest: true }))
+    try {
+      const { error } = await supabase.from("guest_manifest").insert([
+        {
+          guest_name: formState.newGuestName,
+          cabin_nr: formState.newCabinNumber,
+          nationality: formState.newNationality,
+          booking_number: formState.newBookingNumber,
+          cruise_id: formState.newCruiseId,
+        },
+      ])
+
+      if (error) {
+        console.error("Error adding guest:", error)
+        throw error
+      }
+
+      await fetchGuests()
+
+      toast({
+        title: "Success",
+        description: "Guest added successfully.",
+        variant: "default",
+      })
+    } catch (error) {
+      console.error("Error adding guest:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add guest. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, addGuest: false }))
+    }
+  }
+
+  const handleRefresh = async () => {
+    setLoadingStates((prev) => ({ ...prev, refresh: true }))
+    try {
+      await fetchGuests()
+    } catch (error) {
+      console.error("Error refreshing guests:", error)
+      toast({
+        title: "Error",
+        description: "Failed to refresh guest list. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, refresh: false }))
+    }
+  }
+
+  const exportCabinReport = () => {
+    // Placeholder for export cabin report functionality
+    toast({
+      title: "Info",
+      description: "Export Cabin Report functionality is not implemented yet.",
+      variant: "default",
+    })
   }
 
   // Apply filters and search
@@ -561,186 +628,6 @@ export function GuestList() {
         }
       },
     })
-  }
-
-  // FEATURE 1: Add Guest Button Functionality
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
-    setFormState({
-      ...formState,
-      [field]: e.target.value,
-    })
-
-    // Clear error when user types
-    if (formErrors[field]) {
-      setFormErrors({
-        ...formErrors,
-        [field]: "",
-      })
-    }
-  }
-
-  const validateGuestForm = () => {
-    const errors: Record<string, string> = {}
-
-    if (!formState.newGuestName.trim()) {
-      errors.newGuestName = "Guest name is required"
-    }
-
-    if (!formState.newCabinNumber.trim()) {
-      errors.newCabinNumber = "Cabin number is required"
-    }
-
-    return errors
-  }
-
-  const handleAddGuest = async () => {
-    const errors = validateGuestForm()
-
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors)
-      return
-    }
-
-    try {
-      setLoadingStates((prev) => ({ ...prev, addGuest: true }))
-
-      // Insert new guest into Supabase
-      const { data, error } = await supabase
-        .from("guest_manifest")
-        .insert([
-          {
-            guest_name: formState.newGuestName,
-            cabin_nr: formState.newCabinNumber,
-            nationality: formState.newNationality,
-            booking_number: formState.newBookingNumber,
-            cruise_id: formState.newCruiseId,
-          },
-        ])
-        .select()
-
-      if (error) throw error
-
-      // Clear form
-      setFormState({
-        newGuestName: "",
-        newCabinNumber: "",
-        newNationality: "",
-        newBookingNumber: "",
-        newCruiseId: "",
-      })
-
-      // Refresh guest list
-      await fetchGuests()
-
-      toast({
-        title: "Success",
-        description: "Guest added successfully!",
-        variant: "default",
-      })
-    } catch (error) {
-      console.error("Error adding guest:", error)
-      toast({
-        title: "Error",
-        description: "Failed to add guest. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, addGuest: false }))
-    }
-  }
-
-  // FEATURE 3: Implement Refresh
-  const handleRefresh = async () => {
-    try {
-      setLoadingStates((prev) => ({ ...prev, refresh: true }))
-
-      // Refresh all data
-      await Promise.all([fetchGuests(), fetchMealSelections()])
-
-      toast({
-        title: "Success",
-        description: "Data refreshed successfully.",
-        variant: "default",
-      })
-    } catch (error) {
-      console.error("Error refreshing data:", error)
-      toast({
-        title: "Error",
-        description: "Failed to refresh data. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, refresh: false }))
-    }
-  }
-
-  // FEATURE 4: Export Cabin Report
-  const exportCabinReport = () => {
-    try {
-      setLoadingStates((prev) => ({ ...prev, export: true }))
-
-      // Group guests by cabin
-      const cabinGroups: Record<string, any[]> = {}
-      guests.forEach((guest) => {
-        const cabinNr = guest.cabin_nr || "Unknown"
-        if (!cabinGroups[cabinNr]) {
-          cabinGroups[cabinNr] = []
-        }
-        cabinGroups[cabinNr].push(guest)
-      })
-
-      // Prepare CSV content
-      const headers = ["Cabin", "Guest Name", "Table", "Nationality", "Booking Number", "Meal Status", "Days Selected"]
-      const rows: string[][] = []
-
-      // Add data rows
-      Object.entries(cabinGroups).forEach(([cabin, cabinGuests]) => {
-        cabinGuests.forEach((guest) => {
-          const guestMeals = mealSelections[guest.id] || {}
-          const daysSelected = Object.keys(guestMeals).length
-          const mealStatus = daysSelected > 0 ? (daysSelected >= 6 ? "Complete" : "Partial") : "None"
-
-          rows.push([
-            cabin,
-            guest.guest_name || "",
-            guest.table_nr?.toString() || "Unassigned",
-            guest.nationality || "",
-            guest.booking_number || "",
-            mealStatus,
-            daysSelected.toString(),
-          ])
-        })
-      })
-
-      // Convert to CSV
-      const csvContent = [headers.join(","), ...rows.map((row) => row.map((cell) => `"${cell}"`).join(","))].join("\n")
-
-      // Create and download file
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement("a")
-      const timestamp = new Date().toISOString().split("T")[0]
-      link.setAttribute("href", url)
-      link.setAttribute("download", `cabin_report_${timestamp}.csv`)
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-
-      toast({
-        title: "Success",
-        description: "Cabin report exported successfully.",
-        variant: "default",
-      })
-    } catch (error) {
-      console.error("Error exporting cabin report:", error)
-      toast({
-        title: "Error",
-        description: "Failed to export cabin report. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, export: false }))
-    }
   }
 
   return (
@@ -1213,7 +1100,7 @@ export function GuestList() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
+                                  className="h-6 w-6 p-0"
                                   onClick={() => {
                                     const newCabin = prompt(`Change cabin for ${guest.guest_name}:`, guest.cabin_nr)
                                     if (newCabin && newCabin !== guest.cabin_nr) {
