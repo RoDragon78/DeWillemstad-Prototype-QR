@@ -310,14 +310,15 @@ export default function MealSelectionPage() {
     }
   }
 
-  // Handle save
-  const handleSave = async () => {
+  // Handle save and generate PDF (now the main save function)
+  const handleSaveAndGeneratePdf = async () => {
     if (!validateSelections()) {
       setValidationError("Please select a meal for each guest for all days before saving.")
       return
     }
 
     setIsSaving(true)
+    setIsPdfGenerating(true)
     setValidationError(null)
 
     try {
@@ -360,37 +361,15 @@ export default function MealSelectionPage() {
         }
       }
 
+      // Generate PDF
+      await generatePdf()
+
       // Show confirmation screen and start countdown
       setShowConfirmation(true)
       setRedirectCountdown(3)
     } catch (error) {
       console.error("Error saving selections:", error)
       alert("There was an error saving your selections. Please try again.")
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  // Handle save and generate PDF
-  const handleSaveAndGeneratePdf = async () => {
-    if (!validateSelections()) {
-      setValidationError("Please select a meal for each guest for all days before saving.")
-      return
-    }
-
-    setIsSaving(true)
-    setIsPdfGenerating(true)
-    setValidationError(null)
-
-    try {
-      // First save the selections
-      await handleSave()
-
-      // Then generate the PDF
-      await generatePdf()
-    } catch (error) {
-      console.error("Error in save and generate PDF:", error)
-      alert("There was an error processing your request. Please try again.")
     } finally {
       setIsSaving(false)
       setIsPdfGenerating(false)
@@ -540,7 +519,7 @@ export default function MealSelectionPage() {
         </div>
 
         <div className="mb-2 flex justify-between items-center">
-          <Button variant="outline" onClick={handleBackToHome} className="flex items-center">
+          <Button variant="outline" onClick={handleBackToHome} className="flex items-center bg-transparent">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Home
           </Button>
@@ -662,18 +641,7 @@ export default function MealSelectionPage() {
               disabled={isSaving || isPdfGenerating || !validateSelections()}
             >
               <FileDown className="mr-2 h-4 w-4" />
-              {isPdfGenerating || isSaving ? "Processing..." : "Save PDF and Submit"}
-            </Button>
-
-            <Button
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                handleSave()
-              }}
-              disabled={isSaving || !validateSelections()}
-            >
-              {isSaving ? "Saving..." : "Submit Selections"}
+              {isPdfGenerating || isSaving ? "Processing..." : "Complete Selection & Save PDF"}
             </Button>
           </div>
 
