@@ -74,48 +74,6 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
   // Simplified data fetching that uses meal_category directly
   const fetchMealData = useCallback(async () => {
     try {
-      if (selectedDay === "all") {
-        // Fetch data for all days
-        const allDaysData = {}
-        const allDays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday"]
-
-        for (const day of allDays) {
-          const dayNumber = DAY_MAPPING[day]
-          const { data: selections, error } = await supabase
-            .from("meal_selections")
-            .select("guest_id, meal_id, meal_name, meal_category, day")
-            .eq("day", dayNumber)
-
-          if (!error && selections) {
-            allDaysData[day] = selections.reduce((acc, selection) => {
-              acc[selection.guest_id] = {
-                meal_id: selection.meal_id,
-                meal_name: selection.meal_name,
-                category: selection.meal_category?.toLowerCase() || "noSelection",
-              }
-              return acc
-            }, {})
-          }
-        }
-
-        // Process weekly data here
-        setMealData(
-          guests.map((guest) => ({
-            ...guest,
-            meals: {
-              sunday: allDaysData.sunday?.[guest.id] || null,
-              monday: allDaysData.monday?.[guest.id] || null,
-              tuesday: allDaysData.tuesday?.[guest.id] || null,
-              wednesday: allDaysData.wednesday?.[guest.id] || null,
-              thursday: allDaysData.thursday?.[guest.id] || null,
-              friday: allDaysData.friday?.[guest.id] || null,
-            },
-          })),
-        )
-
-        return
-      }
-
       const dayNumber = DAY_MAPPING[selectedDay]
       console.log(`Fetching meal data for day ${dayNumber}`)
 
@@ -472,70 +430,11 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
     window.print()
   }
 
-  // Function to get weekly meal data for all guests
-  const getWeeklyGuestData = () => {
-    // This will be populated when we fetch all days data
-    return guests
-      .map((guest) => ({
-        ...guest,
-        meals: {
-          sunday: null,
-          monday: null,
-          tuesday: null,
-          wednesday: null,
-          thursday: null,
-          friday: null,
-        },
-      }))
-      .filter((guest) => {
-        const matchesSearch =
-          !searchQuery ||
-          guest.guest_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          guest.cabin_nr?.toString().includes(searchQuery)
-        const matchesCabin = !filterCabin || guest.cabin_nr?.toString().includes(filterCabin)
-        return matchesSearch && matchesCabin
-      })
-      .sort((a, b) => {
-        // Sort by cabin number
-        return (a.cabin_nr || "").localeCompare(b.cabin_nr || "")
-      })
-  }
-
-  // Function to render meal cell with category badge
-  const renderMealCell = (meal) => {
-    if (!meal) {
-      return (
-        <Badge variant="destructive" className="text-xs">
-          No Selection
-        </Badge>
-      )
-    }
-
-    const categoryColors = {
-      meat: "bg-red-100 text-red-800",
-      fish: "bg-blue-100 text-blue-800",
-      vegetarian: "bg-green-100 text-green-800",
-      other: "bg-gray-100 text-gray-800",
-    }
-
-    return (
-      <div className="space-y-1">
-        <Badge className={`text-xs ${categoryColors[meal.category] || categoryColors.other}`}>
-          {meal.category?.charAt(0).toUpperCase() + meal.category?.slice(1) || "Other"}
-        </Badge>
-        <div className="text-xs text-gray-600 truncate max-w-32" title={meal.meal_name}>
-          {meal.meal_name}
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-6">
       {/* Day Selection Tabs */}
       <Tabs value={selectedDay} onValueChange={setSelectedDay}>
-        <TabsList className="grid w-full grid-cols-7">
-          <TabsTrigger value="all">All Days</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="sunday">Sunday</TabsTrigger>
           <TabsTrigger value="monday">Monday</TabsTrigger>
           <TabsTrigger value="tuesday">Tuesday</TabsTrigger>
@@ -736,114 +635,6 @@ export function DailyFloorPlan({ tableCapacities, guests, onTableUpdate }) {
                         </tr>
                       )
                     })}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="all" className="space-y-6">
-          {/* Weekly Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ChefHat className="h-5 w-5" />
-                Weekly Meal Summary - All Days
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
-                <div className="bg-blue-50 p-3 rounded-lg">
-                  <p className="text-sm text-blue-600 font-medium">Total Guests</p>
-                  <p className="text-2xl font-bold">{kitchenSummary.totalGuests || 0}</p>
-                </div>
-                <div className="bg-red-50 p-3 rounded-lg">
-                  <p className="text-sm text-red-600 font-medium">Total Meat Dishes</p>
-                  <p className="text-2xl font-bold">{kitchenSummary.meat || 0}</p>
-                </div>
-                <div className="bg-blue-50 p-3 rounded-lg">
-                  <p className="text-sm text-blue-600 font-medium">Total Fish Dishes</p>
-                  <p className="text-2xl font-bold">{kitchenSummary.fish || 0}</p>
-                </div>
-                <div className="bg-green-50 p-3 rounded-lg">
-                  <p className="text-sm text-green-600 font-medium">Total Vegetarian</p>
-                  <p className="text-2xl font-bold">{kitchenSummary.vegetarian || 0}</p>
-                </div>
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="text-sm text-gray-600 font-medium">No Selections</p>
-                  <p className="text-2xl font-bold">{kitchenSummary.noSelection || 0}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Weekly Guest List by Cabin */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  Weekly Meal Report by Cabin
-                </div>
-                <Button onClick={handlePrint} variant="outline" size="sm">
-                  <Printer className="h-4 w-4 mr-2" />
-                  Print Weekly Report
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {/* Search and Filter Controls */}
-              <div className="flex flex-wrap gap-4 mb-4">
-                <div className="flex items-center gap-2">
-                  <Search className="h-4 w-4" />
-                  <Input
-                    placeholder="Search guests or cabins..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-48"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <Filter className="h-4 w-4" />
-                  <Input
-                    placeholder="Filter by cabin..."
-                    value={filterCabin}
-                    onChange={(e) => setFilterCabin(e.target.value)}
-                    className="w-32"
-                  />
-                </div>
-              </div>
-
-              {/* Weekly Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Cabin</th>
-                      <th className="px-3 py-2 text-left">Guest Name</th>
-                      <th className="px-3 py-2 text-left">Table</th>
-                      <th className="px-3 py-2 text-left">Sunday</th>
-                      <th className="px-3 py-2 text-left">Monday</th>
-                      <th className="px-3 py-2 text-left">Tuesday</th>
-                      <th className="px-3 py-2 text-left">Wednesday</th>
-                      <th className="px-3 py-2 text-left">Thursday</th>
-                      <th className="px-3 py-2 text-left">Friday</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {getWeeklyGuestData().map((guest) => (
-                      <tr key={guest.id}>
-                        <td className="px-3 py-2 font-medium">{guest.cabin_nr}</td>
-                        <td className="px-3 py-2">{guest.guest_name}</td>
-                        <td className="px-3 py-2">{guest.table_nr || "Unassigned"}</td>
-                        <td className="px-3 py-2">{renderMealCell(guest.meals.sunday)}</td>
-                        <td className="px-3 py-2">{renderMealCell(guest.meals.monday)}</td>
-                        <td className="px-3 py-2">{renderMealCell(guest.meals.tuesday)}</td>
-                        <td className="px-3 py-2">{renderMealCell(guest.meals.wednesday)}</td>
-                        <td className="px-3 py-2">{renderMealCell(guest.meals.thursday)}</td>
-                        <td className="px-3 py-2">{renderMealCell(guest.meals.friday)}</td>
-                      </tr>
-                    ))}
                   </tbody>
                 </table>
               </div>
