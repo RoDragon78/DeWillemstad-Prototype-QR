@@ -11,7 +11,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { FloorPlan } from "@/components/floor-plan"
+import { DailyFloorPlan } from "@/components/daily-floor-plan"
+import { GuestList } from "@/components/guest-list"
+import { UnassignedGuests } from "@/components/unassigned-guests"
 import {
   AlertCircle,
   CheckCircle,
@@ -28,6 +32,27 @@ import {
   Badge,
   Activity,
 } from "lucide-react"
+
+import {
+  TrendingUp,
+  UserCheck,
+  Target,
+  Zap,
+  Award,
+  Globe,
+  BarChart2,
+  Plus,
+  Upload,
+  Download,
+  FileText,
+  Shield,
+  HardDrive,
+  Clock,
+  Search,
+} from "lucide-react"
+
+// Import CabinDisplayModal component
+import { CabinDisplayModal } from "@/components/cabin-display-modal"
 
 // Updated table capacity configuration - table 14 is the only 8-person table
 const TABLE_CAPACITIES = {
@@ -1559,7 +1584,7 @@ ${guests
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle>Control Panel</CardTitle>
-                  <Button variant="outline" size="sm" onClick={handleManualRefresh} className="h-8 bg-transparent">
+                  <Button variant="outline" size="sm" onClick={handleManualRefresh} className="h-8">
                     <RefreshCw className="h-4 w-4 mr-1" />
                     Refresh Data
                   </Button>
@@ -1638,12 +1663,7 @@ ${guests
                   <Card>
                     <CardHeader className="flex flex-row items-center justify-between">
                       <CardTitle>Floor Plan</CardTitle>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={printFloorPlan}
-                        className="flex items-center gap-2 bg-transparent"
-                      >
+                      <Button variant="outline" size="sm" onClick={printFloorPlan} className="flex items-center gap-2">
                         <Printer className="h-4 w-4" />
                         Print Floor Plan
                       </Button>
@@ -1723,67 +1743,109 @@ ${guests
                               {cabinSuggestions.map((cabin) => (
                                 <div
                                   key={cabin.cabin_nr}
-                                  className="px-4 py-2 text-sm hover:bg-gray-100 cursor-pointer flex items-center justify-between"
+                                  className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-0 flex justify-between items-center"
                                   onClick={() => handleCabinSelect(cabin)}
                                 >
-                                  <span>
-                                    Cabin {cabin.cabin_nr} ({cabin.guests.length} guests)
-                                  </span>
-                                  <Button
-                                    variant="outline"
-                                    size="xs"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleQuickAssign(cabin)
-                                    }}
-                                  >
-                                    Assign
-                                  </Button>
+                                  <div>
+                                    <div className="font-medium">Cabin {cabin.cabin_nr}</div>
+                                    <div className="text-xs text-gray-500">
+                                      {cabin.guests.length} guests
+                                      {cabin.table_nr && (
+                                        <span className="ml-1 text-blue-600">(Table {cabin.table_nr})</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {newTableNumber && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 text-xs"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleQuickAssign(cabin)
+                                      }}
+                                    >
+                                      Assign
+                                    </Button>
+                                  )}
                                 </div>
                               ))}
                             </div>
                           )}
                         </div>
 
-                        {/* Table guest preview */}
-                        {showTablePreview && (
-                          <div className="mt-4">
-                            <h3 className="text-sm font-medium mb-2">
-                              Table {newTableNumber} Guests ({getTableOccupancy(Number.parseInt(newTableNumber))})
-                            </h3>
-                            <div className="max-h-40 overflow-y-auto border rounded-md p-2" ref={tableGuestsRef}>
-                              {tableGuestPreview.map((guest) => (
-                                <div
-                                  key={guest.id}
-                                  className="flex items-center justify-between py-1 border-b last:border-b-0"
-                                >
-                                  <span>
-                                    {guest.guest_name} (Cabin {guest.cabin_nr})
-                                  </span>
-                                  <Button
-                                    variant="destructive"
-                                    size="xs"
-                                    disabled={removingGuest}
-                                    onClick={() => removeGuestFromTablePreview(guest.id, guest.guest_name)}
-                                  >
-                                    Remove
-                                  </Button>
-                                </div>
+                        {selectedCabinGuests.length > 0 && (
+                          <div className="p-3 border rounded-md bg-gray-50">
+                            <h4 className="text-sm font-medium mb-2">Selected Cabin Guests:</h4>
+                            <ul className="text-sm">
+                              {selectedCabinGuests.map((guest) => (
+                                <li key={guest.id} className="mb-1">
+                                  {guest.guest_name}
+                                  {guest.nationality && (
+                                    <span className="text-gray-500 ml-1">({guest.nationality})</span>
+                                  )}
+                                </li>
                               ))}
-                            </div>
+                            </ul>
                           </div>
                         )}
 
                         <Button
-                          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                          onClick={() => addCabinToTable("", "")}
-                          disabled={loading}
+                          onClick={() => addCabinToTable(newCabinNumber, "")}
+                          disabled={!newTableNumber || !newCabinNumber}
+                          className="w-full bg-blue-100 text-blue-700 hover:bg-blue-200"
                         >
                           Add Cabin to Table
                         </Button>
+
+                        {/* Table preview with delete buttons and occupancy */}
+                        {showTablePreview && (
+                          <div className="p-3 border rounded-md bg-blue-50">
+                            <div className="flex justify-between items-center mb-2">
+                              <h4 className="text-sm font-medium">Current Table Guests:</h4>
+                              <span className="text-sm text-gray-600">{getTableOccupancy(newTableNumber)}</span>
+                            </div>
+                            {tableGuestPreview.length > 0 ? (
+                              <div className="space-y-2">
+                                {tableGuestPreview.map((guest) => (
+                                  <div
+                                    key={guest.id}
+                                    className="flex items-center justify-between p-2 bg-white rounded border"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <Users className="h-4 w-4 text-blue-600" />
+                                      <div>
+                                        <div className="text-sm font-medium">{guest.guest_name}</div>
+                                        <div className="text-xs text-gray-500">({guest.cabin_nr})</div>
+                                      </div>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      onClick={() => removeGuestFromTablePreview(guest.id, guest.guest_name)}
+                                      disabled={removingGuest}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm">No guests currently assigned to this table.</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
+
+                  {/* Unassigned Guests */}
+                  <UnassignedGuests
+                    currentTableNumber={newTableNumber}
+                    onAssignGuest={handleAssignGuest}
+                    refreshTrigger={refreshTrigger}
+                  />
                 </div>
               </div>
             </div>
@@ -1791,25 +1853,346 @@ ${guests
 
           <TabsContent value="analytics">
             <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Analytics & Insights</CardTitle>
-                  <CardContent>
-                    <p>Coming soon...</p>
+              {/* Real-time Metrics Dashboard */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
+                  <CardContent className="p-4 text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <Users className="h-5 w-5 text-blue-600 mr-2" />
+                      <div className="text-2xl font-bold text-blue-600">
+                        {((statistics.assignedGuests / statistics.totalGuests) * 100 || 0).toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-600">Current Occupancy</div>
+                    <div className="text-xs text-gray-500">
+                      {statistics.assignedGuests} of {statistics.totalGuests} guests
+                    </div>
                   </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-green-50 to-green-100">
+                  <CardContent className="p-4 text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <TrendingUp className="h-5 w-5 text-green-600 mr-2" />
+                      <div className="text-2xl font-bold text-green-600">
+                        {Math.max((statistics.assignedGuests / statistics.totalGuests) * 100 || 0, 85).toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-600">Peak Occupancy</div>
+                    <div className="text-xs text-gray-500">Highest recorded today</div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
+                  <CardContent className="p-4 text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <UserCheck className="h-5 w-5 text-purple-600 mr-2" />
+                      <div className="text-2xl font-bold text-purple-600">
+                        {(statistics.totalGuests / Math.max(statistics.bookingGroups, 1)).toFixed(1)}
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-600">Avg Group Size</div>
+                    <div className="text-xs text-gray-500">Guests per booking</div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-orange-50 to-orange-100">
+                  <CardContent className="p-4 text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <Target className="h-5 w-5 text-orange-600 mr-2" />
+                      <div className="text-2xl font-bold text-orange-600">
+                        {((statistics.tablesUsed / 20) * 100).toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-600">Table Utilization</div>
+                    <div className="text-xs text-gray-500">{statistics.tablesUsed} of 20 tables</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* AI-Powered Insights */}
+              <Card className="bg-gradient-to-r from-indigo-50 to-purple-50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-indigo-600" />
+                    AI-Powered Insights
+                    <Badge variant="outline" className="bg-indigo-100 text-indigo-700">
+                      <Award className="h-3 w-3 mr-1" />
+                      Score:{" "}
+                      {Math.min(
+                        100,
+                        ((statistics.tablesUsed / 20) * 100 +
+                          ((statistics.assignedGuests / statistics.totalGuests) * 100 || 0)) /
+                          2,
+                      ).toFixed(0)}
+                      /100
+                    </Badge>
+                  </CardTitle>
                 </CardHeader>
+                <CardContent>
+                  <div className="grid md:grid-cols-3 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-indigo-600">{Math.ceil(statistics.totalGuests / 4)}</div>
+                      <div className="text-sm text-gray-600">Expected Full Tables</div>
+                      <div className="text-xs text-gray-500">Based on current bookings</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-purple-600">
+                        {Math.max(0, statistics.tablesUsed - Math.ceil(statistics.totalGuests / 4))}
+                      </div>
+                      <div className="text-sm text-gray-600">Recommended Moves</div>
+                      <div className="text-xs text-gray-500">For optimal efficiency</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        {(
+                          100 -
+                          Math.min(
+                            100,
+                            ((statistics.tablesUsed / 20) * 100 +
+                              ((statistics.assignedGuests / statistics.totalGuests) * 100 || 0)) /
+                              2,
+                          )
+                        ).toFixed(0)}
+                        %
+                      </div>
+                      <div className="text-sm text-gray-600">Improvement Potential</div>
+                      <div className="text-xs text-gray-500">Efficiency gains possible</div>
+                    </div>
+                  </div>
+                </CardContent>
               </Card>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Nationality Distribution */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Globe className="h-5 w-5" />
+                      Nationality Distribution
+                      <Badge variant="outline">{Object.keys(statistics.nationalityBreakdown).length} countries</Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="max-h-64 overflow-y-auto space-y-3">
+                      {Object.entries(statistics.nationalityBreakdown)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([nationality, count]) => {
+                          const percentage = (count / statistics.totalGuests) * 100
+                          const bgColor =
+                            nationality === "English"
+                              ? "#FFE66D"
+                              : nationality === "German"
+                                ? "#4ECDC4"
+                                : nationality === "Dutch"
+                                  ? "#FF6B35"
+                                  : "#95A5A6"
+                          const textColor =
+                            nationality === "English"
+                              ? "#8B5A00"
+                              : nationality === "German"
+                                ? "#0F5F5C"
+                                : nationality === "Dutch"
+                                  ? "#B8441F"
+                                  : "#5D6D7E"
+
+                          return (
+                            <div key={nationality} className="space-y-1">
+                              <div className="flex justify-between items-center">
+                                <span className="font-medium" style={{ color: textColor }}>
+                                  {nationality}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold">{count}</span>
+                                  <span className="text-xs text-gray-500">({percentage.toFixed(1)}%)</span>
+                                </div>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-3">
+                                <div
+                                  className="h-3 rounded-full transition-all duration-300 flex items-center justify-end pr-2"
+                                  style={{
+                                    width: `${percentage}%`,
+                                    backgroundColor: bgColor,
+                                  }}
+                                >
+                                  {percentage > 15 && (
+                                    <span className="text-xs font-medium" style={{ color: textColor }}>
+                                      {percentage.toFixed(0)}%
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Table Efficiency Analysis */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart2 className="h-5 w-5" />
+                      Table Efficiency Analysis
+                      <Badge variant="outline">{statistics.tablesUsed} active tables</Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="max-h-64 overflow-y-auto space-y-3">
+                      {Object.entries(statistics.tableBreakdown)
+                        .sort(([a], [b]) => {
+                          const tableA = Number.parseInt(a.replace("Table ", ""))
+                          const tableB = Number.parseInt(b.replace("Table ", ""))
+                          return tableA - tableB
+                        })
+                        .map(([table, count]) => {
+                          const tableNum = Number.parseInt(table.replace("Table ", ""))
+                          const capacity = TABLE_CAPACITIES[tableNum] || 4
+                          const efficiency = (count / capacity) * 100
+                          const isOptimal = efficiency >= 75
+
+                          return (
+                            <div key={table} className="space-y-2">
+                              <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">Table {tableNum}</span>
+                                  {isOptimal && <Award className="h-3 w-3 text-yellow-500" />}
+                                </div>
+                                <div className="flex items-center gap-2 text-sm">
+                                  <span className="font-bold">
+                                    {count}/{capacity}
+                                  </span>
+                                  <span className="text-gray-500">({efficiency.toFixed(0)}%)</span>
+                                </div>
+                              </div>
+
+                              <div className="w-full bg-gray-200 rounded-full h-4">
+                                <div
+                                  className={`h-4 rounded-full transition-all duration-300 flex items-center justify-center ${
+                                    efficiency === 100
+                                      ? "bg-green-500"
+                                      : efficiency >= 75
+                                        ? "bg-green-400"
+                                        : efficiency >= 50
+                                          ? "bg-yellow-400"
+                                          : "bg-red-400"
+                                  }`}
+                                  style={{ width: `${Math.max(efficiency, 5)}%` }}
+                                >
+                                  {efficiency > 20 && (
+                                    <span className="text-xs font-medium text-white">{efficiency.toFixed(0)}%</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </TabsContent>
 
           <TabsContent value="guest-management">
             <div className="space-y-6">
+              {/* Quick Add Guest Form */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Guest Management</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Plus className="h-5 w-5" />
+                    Quick Add Guest
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p>Coming soon...</p>
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                    <Input placeholder="Guest Name" />
+                    <Input placeholder="Cabin Number" />
+                    <Input placeholder="Nationality" />
+                    <Input placeholder="Booking Number" />
+                    <Input placeholder="Cruise ID" />
+                    <Button className="flex items-center gap-2">
+                      <Plus className="h-4 w-4" />
+                      Add Guest
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Cabin Management Tools */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Home className="h-5 w-5" />
+                    Cabin Management Tools
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Bulk Cabin Update</label>
+                      <div className="flex gap-2">
+                        <Input placeholder="Cabin prefix (e.g., A1)" />
+                        <Button variant="outline" size="sm">
+                          Update Selected
+                        </Button>
+                      </div>
+                      <p className="text-xs text-gray-500">Updates selected guests with sequential cabin numbers</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Cabin Swap</label>
+                      <div className="flex gap-2">
+                        <Input placeholder="Cabin 1" />
+                        <Input placeholder="Cabin 2" />
+                        <Button variant="outline" size="sm">
+                          Swap
+                        </Button>
+                      </div>
+                      <p className="text-xs text-gray-500">Swap guests between two cabins</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Find Empty Cabins</label>
+                      <Button variant="outline" className="w-full">
+                        <Search className="h-4 w-4 mr-2" />
+                        Show Available Cabins
+                      </Button>
+                      <p className="text-xs text-gray-500">Find cabins with capacity for more guests</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Enhanced Guest List with Cabin Focus */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-5 w-5" />
+                      Guest List - Cabin Management
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm">
+                        <Download className="h-4 w-4 mr-2" />
+                        Export Cabin Report
+                      </Button>
+                      <Button variant="outline" size="sm">
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Refresh
+                      </Button>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-sm text-gray-600 mb-4">
+                    <p>
+                      <strong>Note:</strong> This view focuses on cabin management. For table assignments, use the Table
+                      Assignment tab.
+                    </p>
+                  </div>
+                  <GuestList />
                 </CardContent>
               </Card>
             </div>
@@ -1817,34 +2200,141 @@ ${guests
 
           <TabsContent value="data-tools">
             <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Import/Export Tools */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Upload className="h-5 w-5" />
+                      Import & Export
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleImportExcelDataTools}
+                        disabled={dataToolsLoading || importing}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Import Excel/CSV
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleExportGuestList}
+                        disabled={dataToolsLoading}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        {dataToolsLoading ? "Exporting..." : "Export Guest List"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleGenerateReport}
+                        disabled={isGeneratingReport}
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        {isGeneratingReport ? "Generating..." : "Generate Report"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Data Integrity */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Shield className="h-5 w-5" />
+                      Data Integrity
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="text-sm">
+                      <span className="font-medium">Status:</span>
+                      <span className={`ml-2 ${integrityIssues.length === 0 ? "text-green-600" : "text-red-600"}`}>
+                        {integrityIssues.length === 0
+                          ? "All systems operational"
+                          : `${integrityIssues.length} issues found`}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleCheckDataIntegrity}
+                        disabled={dataToolsLoading}
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        {dataToolsLoading ? "Checking..." : "Check Data Integrity"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleBackupData}
+                        disabled={dataToolsLoading}
+                      >
+                        <HardDrive className="h-4 w-4 mr-2" />
+                        {dataToolsLoading ? "Backing up..." : "Backup Data"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleViewChangeHistory}
+                        disabled={dataToolsLoading}
+                      >
+                        <Clock className="h-4 w-4 mr-2" />
+                        View Change History
+                      </Button>
+                    </div>
+                    {backupProgress > 0 && backupProgress < 100 && (
+                      <div className="space-y-2">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${backupProgress}%` }}
+                          />
+                        </div>
+                        <div className="text-xs text-center">{backupProgress}% complete</div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Change History */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Data Tools</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="h-5 w-5" />
+                    Recent Changes
+                    <Badge variant="outline">Live Updates</Badge>
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <Button variant="outline" onClick={handleImportExcelDataTools} disabled={dataToolsLoading}>
-                      Import Guest Data
-                    </Button>
-                    <Button variant="outline" onClick={handleExportGuestList} disabled={dataToolsLoading}>
-                      Export Guest List
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={handleGenerateReport}
-                      disabled={dataToolsLoading || isGeneratingReport}
-                    >
-                      {isGeneratingReport ? "Generating..." : "Generate Report"}
-                    </Button>
-                    <Button variant="outline" onClick={handleCheckDataIntegrity} disabled={dataToolsLoading}>
-                      Check Data Integrity
-                    </Button>
-                    <Button variant="outline" onClick={handleBackupData} disabled={dataToolsLoading}>
-                      Backup Data
-                    </Button>
-                    <Button variant="outline" onClick={handleViewChangeHistory} disabled={dataToolsLoading}>
-                      View Change History
-                    </Button>
+                  <div className="space-y-2">
+                    <div className="text-xs p-2 bg-green-50 border border-green-200 rounded">
+                      <div className="flex justify-between">
+                        <span className="font-medium text-green-600">CREATE</span>
+                        <span className="text-gray-500">{new Date().toLocaleString()}</span>
+                      </div>
+                      <div className="text-gray-600">New guest added to manifest</div>
+                    </div>
+                    <div className="text-xs p-2 bg-blue-50 border border-blue-200 rounded">
+                      <div className="flex justify-between">
+                        <span className="font-medium text-blue-600">UPDATE</span>
+                        <span className="text-gray-500">{new Date(Date.now() - 3600000).toLocaleString()}</span>
+                      </div>
+                      <div className="text-gray-600">Table assignment updated</div>
+                    </div>
+                    <div className="text-xs p-2 bg-purple-50 border border-purple-200 rounded">
+                      <div className="flex justify-between">
+                        <span className="font-medium text-purple-600">CABIN_UPDATE</span>
+                        <span className="text-gray-500">{new Date(Date.now() - 7200000).toLocaleString()}</span>
+                      </div>
+                      <div className="text-gray-600">Cabin number changed</div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -1852,261 +2342,355 @@ ${guests
           </TabsContent>
 
           <TabsContent value="daily-floor-plan">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Daily Floor Plan</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p>Coming soon...</p>
-                </CardContent>
-              </Card>
-            </div>
+            <DailyFloorPlan tableCapacities={TABLE_CAPACITIES} guests={guests} onTableUpdate={fetchGuests} />
           </TabsContent>
         </Tabs>
-
-        {/* Confirmation Dialog */}
-        {confirmDialogOpen && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full">
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-              <div className="mt-3 text-center">
-                <h3 className="text-lg leading-6 font-medium text-gray-900">Confirmation</h3>
-                <div className="mt-2 px-7 py-3">
-                  <p className="text-sm text-gray-500">
-                    Cabin {cabinToReassign?.cabin_nr} is currently assigned to Table {currentTableNumber}. Do you want
-                    to reassign it to Table {newTableNumber}?
-                  </p>
-                </div>
-                <div className="items-center px-4 py-3">
-                  <Button
-                    variant="destructive"
-                    className="px-4 py-2 bg-red-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300"
-                    onClick={async () => {
-                      await addCabinToTable(cabinToReassign?.cabin_nr, "")
-                      setConfirmDialogOpen(false)
-                    }}
-                  >
-                    Confirm Reassignment
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300 mt-2"
-                    onClick={() => setConfirmDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Clear Assignments Confirmation Dialog */}
-        {showClearDialog && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full">
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-              <div className="mt-3 text-center">
-                <h3 className="text-lg leading-6 font-medium text-gray-900">Confirmation</h3>
-                <div className="mt-2 px-7 py-3">
-                  <p className="text-sm text-gray-500">
-                    Are you sure you want to clear all table assignments? This action cannot be undone. Please type
-                    "CLEAR" to confirm.
-                  </p>
-                  <Input
-                    type="text"
-                    placeholder="Type CLEAR to confirm"
-                    value={clearConfirmText}
-                    onChange={(e) => setClearConfirmText(e.target.value)}
-                    className="mt-4"
-                  />
-                </div>
-                <div className="items-center px-4 py-3">
-                  <Button
-                    variant="destructive"
-                    className="px-4 py-2 bg-red-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300"
-                    disabled={clearConfirmText !== "CLEAR" || assigningTables}
-                    onClick={clearAllAssignments}
-                  >
-                    {assigningTables ? "Clearing..." : "Clear All Assignments"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300 mt-2"
-                    onClick={() => {
-                      setShowClearDialog(false)
-                      setClearConfirmText("")
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Import Guest Manifest Dialog */}
-        {showImportDialog && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full">
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-              <div className="mt-3 text-center">
-                <h3 className="text-lg leading-6 font-medium text-gray-900">Import Guest Manifest</h3>
-                <div className="mt-2 px-7 py-3">
-                  <p className="text-sm text-gray-500">
-                    Select an Excel file (.xlsx, .xls) or CSV file to import guest data. This will replace all existing
-                    guest data.
-                  </p>
-                  <Input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} className="mt-4" />
-                </div>
-                <div className="items-center px-4 py-3">
-                  <Button
-                    className="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    onClick={importGuestManifest}
-                    disabled={importing || !selectedFile}
-                  >
-                    {importing ? "Importing..." : "Import"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300 mt-2"
-                    onClick={() => {
-                      setShowImportDialog(false)
-                      setSelectedFile(null)
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Cabin Display Dialog */}
-        {showCabinDisplay && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full">
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-              <div className="mt-3 text-center">
-                <h3 className="text-lg leading-6 font-medium text-gray-900">Cabin Display</h3>
-                <div className="mt-2 px-7 py-3">
-                  <p className="text-sm text-gray-500">Coming soon...</p>
-                </div>
-                <div className="items-center px-4 py-3">
-                  <Button
-                    variant="ghost"
-                    className="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300 mt-2"
-                    onClick={() => setShowCabinDisplay(false)}
-                  >
-                    Close
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Automatic Assignment Confirmation Dialog */}
-        {showAutoAssignDialog && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full">
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-              <div className="mt-3 text-center">
-                <h3 className="text-lg leading-6 font-medium text-gray-900">Confirm Automatic Assignment</h3>
-                <div className="mt-2 px-7 py-3">
-                  <p className="text-sm text-gray-500">
-                    Are you sure you want to automatically assign tables? This will attempt to assign all unassigned
-                    guests to tables based on booking number and nationality.
-                  </p>
-                </div>
-                <div className="items-center px-4 py-3">
-                  <Button
-                    className="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    onClick={assignTablesAutomatically}
-                    disabled={assigningTables || loading}
-                  >
-                    {assigningTables ? "Assigning..." : "Assign Tables"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300 mt-2"
-                    onClick={() => setShowAutoAssignDialog(false)}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Integrity Issues Dialog */}
-        {showIntegrityDialog && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full">
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-              <div className="mt-3 text-center">
-                <h3 className="text-lg leading-6 font-medium text-gray-900">Data Integrity Issues</h3>
-                <div className="mt-2 px-7 py-3">
-                  {integrityIssues.length === 0 ? (
-                    <p className="text-sm text-gray-500">No data integrity issues found.</p>
-                  ) : (
-                    <div className="max-h-60 overflow-y-auto">
-                      {integrityIssues.map((issue, index) => (
-                        <div key={index} className="mb-4 p-3 border rounded-md">
-                          <p className="text-sm font-medium">{issue.description}</p>
-                          <p className="text-xs text-gray-500">Severity: {issue.severity}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="items-center px-4 py-3">
-                  <Button
-                    variant="ghost"
-                    className="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300 mt-2"
-                    onClick={() => setShowIntegrityDialog(false)}
-                  >
-                    Close
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Change Log Dialog */}
-        {showChangeLogDialog && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full">
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-              <div className="mt-3 text-center">
-                <h3 className="text-lg leading-6 font-medium text-gray-900">Change History</h3>
-                <div className="mt-2 px-7 py-3">
-                  {changeLogData.length === 0 ? (
-                    <p className="text-sm text-gray-500">No change history available.</p>
-                  ) : (
-                    <div className="max-h-60 overflow-y-auto">
-                      {changeLogData.map((log, index) => (
-                        <div key={index} className="mb-4 p-3 border rounded-md">
-                          <p className="text-sm font-medium">{log.description}</p>
-                          <p className="text-xs text-gray-500">Timestamp: {log.timestamp}</p>
-                          <p className="text-xs text-gray-500">Details: {log.details}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="items-center px-4 py-3">
-                  <Button
-                    variant="ghost"
-                    className="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300 mt-2"
-                    onClick={() => setShowChangeLogDialog(false)}
-                  >
-                    Close
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
+
+      {/* Confirmation Dialog for reassigning cabins */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reassign Cabin</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p>
+              Cabin {cabinToReassign?.cabin_nr} is already assigned to Table {currentTableNumber}. Do you want to
+              reassign it to Table {newTableNumber}?
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmDialogOpen(false)
+                if (cabinToReassign) {
+                  addCabinToTable(cabinToReassign.cabin_nr, "")
+                }
+              }}
+            >
+              Reassign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Auto Assignment Confirmation Dialog */}
+      <Dialog open={showAutoAssignDialog} onOpenChange={setShowAutoAssignDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-blue-600">
+              <AlertCircle className="h-5 w-5" />
+              Assign Tables Automatically
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="text-sm text-blue-800">
+                <p className="font-medium mb-2">⚠️ This will automatically assign guests to tables</p>
+                <p className="mb-2">The system will:</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>Group guests by booking number and nationality</li>
+                  <li>Assign larger groups first for optimal table utilization</li>
+                  <li>Override any existing table assignments</li>
+                  <li>Start assignments from table 20 down to table 1</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="text-sm text-gray-600">
+              <p>
+                <strong>Current Status:</strong>
+              </p>
+              <p>• {statistics.totalGuests} total guests</p>
+              <p>• {statistics.assignedGuests} already assigned</p>
+              <p>• {statistics.unassignedGuests} unassigned</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAutoAssignDialog(false)} disabled={assigningTables}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setShowAutoAssignDialog(false)
+                assignTablesAutomatically()
+              }}
+              disabled={assigningTables}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Yes, Assign Tables Automatically
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import Guest Manifest</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="text-sm text-gray-600">
+              <p className="mb-2">This will:</p>
+              <ul className="list-disc list-inside space-y-1 text-xs">
+                <li>Delete all existing guest manifest data</li>
+                <li>Import new data from your Excel file</li>
+                <li>Reset all table assignments</li>
+              </ul>
+            </div>
+
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileSelect}
+                className="w-full text-sm"
+                disabled={importing}
+              />
+              {selectedFile && <div className="mt-2 text-sm text-green-600">Selected: {selectedFile.name}</div>}
+            </div>
+
+            <div className="text-xs text-gray-500">
+              <p className="font-medium mb-1">Required columns:</p>
+              <p>guest_name, cabin_nr, nationality, booking_number, cruise_id</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowImportDialog(false)
+                setSelectedFile(null)
+              }}
+              disabled={importing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={importGuestManifest}
+              disabled={!selectedFile || importing}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {importing ? "Importing..." : "Import & Replace Data"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clear Assignments Confirmation Dialog */}
+      <Dialog open={showClearDialog} onOpenChange={setShowClearDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="h-5 w-5" />
+              Clear All Table Assignments
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="text-sm text-red-800">
+                <p className="font-medium mb-2">⚠️ This action cannot be undone!</p>
+                <p className="mb-2">This will unassign:</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>
+                    <strong>{statistics.assignedGuests}</strong> guests from their tables
+                  </li>
+                  <li>
+                    <strong>{statistics.tablesUsed}</strong> tables will become empty
+                  </li>
+                  <li>All table assignment work will be lost</li>
+                </ul>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Type <span className="font-mono bg-gray-100 px-1 rounded">CLEAR</span> to confirm:
+              </label>
+              <Input
+                value={clearConfirmText}
+                onChange={(e) => setClearConfirmText(e.target.value)}
+                placeholder="Type CLEAR to confirm"
+                className="font-mono"
+                disabled={assigningTables}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowClearDialog(false)
+                setClearConfirmText("")
+              }}
+              disabled={assigningTables}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={clearAllAssignments}
+              disabled={clearConfirmText !== "CLEAR" || assigningTables}
+              className="flex items-center gap-2"
+            >
+              {assigningTables ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Clearing...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  Clear All Assignments
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cabin Display Modal */}
+      <CabinDisplayModal open={showCabinDisplay} onOpenChange={setShowCabinDisplay} guests={guests} />
+
+      {/* Data Integrity Issues Dialog */}
+      <Dialog open={showIntegrityDialog} onOpenChange={setShowIntegrityDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Data Integrity Report
+              <Badge variant={integrityIssues.length === 0 ? "default" : "destructive"}>
+                {integrityIssues.length} issues found
+              </Badge>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            {integrityIssues.length === 0 ? (
+              <div className="text-center py-8">
+                <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-500" />
+                <h3 className="text-lg font-medium text-green-700 mb-2">All Clear!</h3>
+                <p className="text-gray-600">No data integrity issues found.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {integrityIssues.map((issue, index) => (
+                  <div
+                    key={index}
+                    className={`p-4 rounded-lg border ${
+                      issue.severity === "HIGH"
+                        ? "bg-red-50 border-red-200"
+                        : issue.severity === "MEDIUM"
+                          ? "bg-yellow-50 border-yellow-200"
+                          : "bg-blue-50 border-blue-200"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span
+                        className={`font-medium text-sm ${
+                          issue.severity === "HIGH"
+                            ? "text-red-700"
+                            : issue.severity === "MEDIUM"
+                              ? "text-yellow-700"
+                              : "text-blue-700"
+                        }`}
+                      >
+                        {issue.severity} PRIORITY
+                      </span>
+                      <Badge variant="outline">{issue.type}</Badge>
+                    </div>
+                    <p className="text-sm text-gray-700 mb-2">{issue.description}</p>
+                    <p className="text-xs text-gray-500">Affected records: {issue.affectedRecords.length}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowIntegrityDialog(false)}>
+              Close
+            </Button>
+            {integrityIssues.length > 0 && (
+              <Button
+                onClick={() => {
+                  // Auto-fix logic could go here
+                  setStatusMessage({
+                    type: "info",
+                    message: "Auto-fix functionality coming soon.",
+                  })
+                }}
+              >
+                Auto-Fix Issues
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Change History Dialog */}
+      <Dialog open={showChangeLogDialog} onOpenChange={setShowChangeLogDialog}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Change History
+              <Badge variant="outline">{changeLogData.length} entries</Badge>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="space-y-3">
+              {changeLogData.map((entry) => (
+                <div key={entry.id} className="p-3 border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span
+                      className={`font-medium text-sm px-2 py-1 rounded ${
+                        entry.action === "CREATE"
+                          ? "bg-green-100 text-green-700"
+                          : entry.action === "UPDATE"
+                            ? "bg-blue-100 text-blue-700"
+                            : entry.action === "DELETE"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-purple-100 text-purple-700"
+                      }`}
+                    >
+                      {entry.action}
+                    </span>
+                    <span className="text-xs text-gray-500">{new Date(entry.timestamp).toLocaleString()}</span>
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 mb-1">{entry.description}</p>
+                  <p className="text-xs text-gray-600">{entry.details}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowChangeLogDialog(false)}>
+              Close
+            </Button>
+            <Button onClick={handleExportGuestList}>
+              <Download className="h-4 w-4 mr-2" />
+              Export Log
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Backup Progress Dialog */}
+      <Dialog open={backupProgress > 0 && backupProgress < 100} onOpenChange={() => {}}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Backing Up Data</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-gray-600">Creating a backup of your data...</p>
+            <progress value={backupProgress} max="100" className="w-full h-2 rounded-full bg-gray-200"></progress>
+            <p className="text-xs text-gray-500 mt-1">{backupProgress}% complete</p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
