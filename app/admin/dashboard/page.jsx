@@ -51,6 +51,8 @@ import {
   FileDown,
 } from "lucide-react"
 
+import { CabinDisplayModal } from "@/components/cabin-display-modal"
+
 // Updated table capacity configuration - table 14 is the only 8-person table
 const TABLE_CAPACITIES = {
   1: 4,
@@ -3029,6 +3031,9 @@ ${guests
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Cabin Display Modal */}
+      <CabinDisplayModal open={showCabinDisplay} onOpenChange={setShowCabinDisplay} guests={guests} />
     </div>
   )
 }

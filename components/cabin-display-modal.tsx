@@ -206,25 +206,28 @@ export function CabinDisplayModal({ open, onOpenChange, guests }: CabinDisplayMo
       className="relative group cursor-pointer transition-all duration-200 hover:scale-105 cabin-card"
       style={getCabinStyle(cabin)}
     >
-      <div className="p-1 rounded-lg text-center min-h-[40px] flex flex-col justify-center min-w-[40px]">
+      {/* Enhanced hover area with padding */}
+      <div className="p-2 rounded-lg text-center min-h-[44px] flex flex-col justify-center min-w-[44px]">
         <div className="text-[9px] font-bold leading-tight">{cabin.cabin_nr}</div>
         <div className="text-sm font-bold leading-tight">{cabin.isEmpty ? "" : cabin.guestCount}</div>
       </div>
 
-      {/* Tooltip on hover - only for occupied cabins */}
+      {/* Enhanced tooltip with better positioning and visibility - only for occupied cabins */}
       {!cabin.isEmpty && (
-        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10 whitespace-nowrap">
-          <div className="font-semibold">Cabin {cabin.cabin_nr}</div>
-          <div>
+        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-[9999] whitespace-nowrap shadow-lg border border-gray-700 max-w-xs">
+          <div className="font-semibold text-sm mb-1 text-yellow-300">Cabin {cabin.cabin_nr}</div>
+          <div className="mb-2 text-gray-200">
             {cabin.guestCount} guest{cabin.guestCount !== 1 ? "s" : ""}
           </div>
-          {cabin.guests.map((guest) => (
-            <div key={guest.id} className="text-xs opacity-90">
-              {guest.guest_name}
-            </div>
-          ))}
-          {/* Arrow */}
-          <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-black"></div>
+          <div className="space-y-1">
+            {cabin.guests.map((guest, index) => (
+              <div key={guest.id || index} className="text-xs text-gray-100 leading-relaxed">
+                • {guest.guest_name || "Unknown Guest"}
+              </div>
+            ))}
+          </div>
+          {/* Enhanced arrow with better positioning */}
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
         </div>
       )}
     </div>
@@ -249,7 +252,7 @@ export function CabinDisplayModal({ open, onOpenChange, guests }: CabinDisplayMo
                 {cabinNr ? (
                   <CabinCard cabin={getCabinByNumber(cabinNr)!} />
                 ) : (
-                  <div className="w-10 h-10" /> // Empty space for gaps
+                  <div className="w-12 h-12" /> // Empty space for gaps
                 )}
               </div>
             ))}
@@ -516,7 +519,7 @@ export function CabinDisplayModal({ open, onOpenChange, guests }: CabinDisplayMo
             <Home className="h-5 w-5" />
             Ship Cabin Display
           </DialogTitle>
-          <Button variant="outline" onClick={handlePrint} className="flex items-center gap-2">
+          <Button variant="outline" onClick={handlePrint} className="flex items-center gap-2 bg-transparent">
             <Printer className="h-4 w-4" />
             Print Floor Plan
           </Button>
