@@ -1763,35 +1763,15 @@ ${guests
     try {
       setExportingMenu(true)
 
-      // Use the existing PDF service
+      // Use the updated PDF service
       const { generateAndDownloadPdf } = await import("@/components/pdf-service")
 
-      // Prepare data in the format expected by the PDF service
-      const mealSelections = {}
-      cabinMenuData.guests.forEach((guest) => {
-        mealSelections[guest.id] = guest.meals
-      })
-
-      // Create mock menu items for the PDF service
-      const menuItems = []
-      let itemId = 1
-      cabinMenuData.guests.forEach((guest) => {
-        Object.values(guest.meals).forEach((meal) => {
-          if (meal && !menuItems.find((item) => item.name_en === meal.meal_name)) {
-            menuItems.push({
-              id: itemId++,
-              name_en: meal.meal_name,
-              meal_type: meal.meal_category,
-            })
-          }
-        })
-      })
-
+      // The PDF service now works directly with the cabinMenuData structure
       const success = await generateAndDownloadPdf({
         cabinNumber: cabinMenuData.cabin_nr,
-        guests: cabinMenuData.guests,
-        mealSelections: mealSelections,
-        menuItems: menuItems,
+        guests: cabinMenuData.guests, // This already contains the meals data in the correct format
+        mealSelections: {}, // Not needed for new format
+        menuItems: [], // Not needed for new format
         language: "en",
       })
 

@@ -47,7 +47,7 @@ export async function generateAndDownloadPdf(options) {
     }
     doc.text(`Guests: ${guestNames.join(", ")}`, 105, 48, { align: "center" })
 
-    // Function to get meal name by ID
+    // Function to get meal name by ID (legacy support)
     const getMealName = (mealId) => {
       let meal = null
       for (let i = 0; i < menuItems.length; i++) {
@@ -66,6 +66,17 @@ export async function generateAndDownloadPdf(options) {
       return meal.name_en
     }
 
+    // Function to get meal category color
+    const getCategoryColor = (category) => {
+      if (!category) return [240, 240, 240] // Light gray for no category
+
+      const lowerCategory = category.toLowerCase()
+      if (lowerCategory === "meat") return [255, 235, 238] // Light red
+      if (lowerCategory === "fish") return [227, 242, 253] // Light blue
+      if (lowerCategory === "vegetarian") return [232, 245, 232] // Light green
+      return [240, 240, 240] // Default light gray
+    }
+
     // Add meal selections for each day
     let yPosition = 60
 
@@ -74,7 +85,12 @@ export async function generateAndDownloadPdf(options) {
       let hasSelections = false
       for (let i = 0; i < guests.length; i++) {
         const guest = guests[i]
-        if (mealSelections[guest.id] && mealSelections[guest.id][day] > 0) {
+
+        // Check both old format (mealSelections with IDs) and new format (guest.meals)
+        const hasOldFormat = mealSelections && mealSelections[guest.id] && mealSelections[guest.id][day] > 0
+        const hasNewFormat = guest.meals && guest.meals[day] && guest.meals[day].meal_name
+
+        if (hasOldFormat || hasNewFormat) {
           hasSelections = true
           break
         }
@@ -89,44 +105,147 @@ export async function generateAndDownloadPdf(options) {
 
         // Add day header
         doc.setFillColor(245, 245, 245)
-        doc.rect(20, yPosition, 170, 8, "F")
+        doc.rect(20, yPosition, 170, 10, "F")
         doc.setFontSize(subtitleFontSize)
         doc.setFont("helvetica", "bold")
-        doc.text(`Day ${day} - ${DAY_NAMES[day]}`, 25, yPosition + 5.5)
-        yPosition += 12
+        doc.text(`Day ${day} - ${DAY_NAMES[day]}`, 25, yPosition + 6.5)
+        yPosition += 15
 
         // Add table header
         doc.setFontSize(normalFontSize)
         doc.setFont("helvetica", "bold")
         doc.text("Guest", 25, yPosition)
         doc.text("Meal Selection", 80, yPosition)
+        doc.text("Category", 150, yPosition)
         yPosition += 5
 
         // Add horizontal line
         doc.setDrawColor(200, 200, 200)
         doc.line(25, yPosition, 185, yPosition)
-        yPosition += 5
+        yPosition += 8
 
         // Add guest selections
         doc.setFont("helvetica", "normal")
         for (let i = 0; i < guests.length; i++) {
           const guest = guests[i]
-          const mealId = mealSelections[guest.id] ? mealSelections[guest.id][day] : null
-          const mealName = getMealName(mealId)
+          let mealName = "No selection"
+          let mealCategory = ""
 
+          // Check for new format first (guest.meals)
+          if (guest.meals && guest.meals[day]) {
+            mealName = guest.meals[day].meal_name || "No selection"
+            mealCategory = guest.meals[day].meal_category || ""
+          }
+          // Fallback to old format (mealSelections with IDs)
+          else if (mealSelections && mealSelections[guest.id] && mealSelections[guest.id][day]) {
+            const mealId = mealSelections[guest.id][day]
+            mealName = getMealName(mealId)
+            // Try to get category from menuItems
+            const menuItem = menuItems.find((item) => item.id === mealId)
+            mealCategory = menuItem ? menuItem.meal_type || "" : ""
+          }
+
+          // Add background color based on meal category
+          if (mealName !== "No selection" && mealCategory) {
+            const categoryColor = getCategoryColor(mealCategory)
+            doc.setFillColor(categoryColor[0], categoryColor[1], categoryColor[2])
+            doc.rect(24, yPosition - 4, 162, 8, "F")
+          }
+
+          // Add guest name
+          doc.setTextColor(0, 0, 0)
           doc.text(guest.guest_name, 25, yPosition)
 
           // Handle long meal names with wrapping
-          const mealNameLines = doc.splitTextToSize(mealName, 105)
+          const mealNameLines = doc.splitTextToSize(mealName, 65)
           doc.text(mealNameLines, 80, yPosition)
 
+          // Add meal category
+          if (mealCategory) {
+            doc.setFontSize(smallFontSize)
+            doc.setFont("helvetica", "bold")
+
+            // Set category text color
+            if (mealCategory.toLowerCase() === "meat") {
+              doc.setTextColor(185, 28, 28) // Red
+            } else if (mealCategory.toLowerCase() === "fish") {
+              doc.setTextColor(37, 99, 235) // Blue
+            } else if (mealCategory.toLowerCase() === "vegetarian") {
+              doc.setTextColor(34, 197, 94) // Green
+            } else {
+              doc.setTextColor(107, 114, 128) // Gray
+            }
+
+            doc.text(mealCategory, 150, yPosition)
+
+            // Reset font and color
+            doc.setFontSize(normalFontSize)
+            doc.setFont("helvetica", "normal")
+            doc.setTextColor(0, 0, 0)
+          }
+
           // Adjust position based on number of lines
-          yPosition += Math.max(6, mealNameLines.length * 5)
+          yPosition += Math.max(10, mealNameLines.length * 5 + 2)
         }
 
         // Add space after each day
-        yPosition += 8
+        yPosition += 10
       }
+    }
+
+    // Add legend if there are meal categories
+    let hasCategories = false
+    for (let i = 0; i < guests.length; i++) {
+      const guest = guests[i]
+      if (guest.meals) {
+        for (let day = 2; day <= 7; day++) {
+          if (guest.meals[day] && guest.meals[day].meal_category) {
+            hasCategories = true
+            break
+          }
+        }
+        if (hasCategories) break
+      }
+    }
+
+    if (hasCategories) {
+      // Add page break if needed
+      if (yPosition > 260) {
+        doc.addPage()
+        yPosition = 20
+      }
+
+      // Add legend
+      doc.setFillColor(245, 245, 245)
+      doc.rect(20, yPosition, 170, 25, "F")
+
+      doc.setFontSize(subtitleFontSize)
+      doc.setFont("helvetica", "bold")
+      doc.setTextColor(0, 0, 0)
+      doc.text("Meal Category Legend:", 25, yPosition + 8)
+
+      doc.setFontSize(normalFontSize)
+      doc.setFont("helvetica", "normal")
+
+      // Meat legend
+      doc.setFillColor(255, 235, 238)
+      doc.rect(25, yPosition + 12, 8, 4, "F")
+      doc.setTextColor(185, 28, 28)
+      doc.text("Meat", 35, yPosition + 15)
+
+      // Fish legend
+      doc.setFillColor(227, 242, 253)
+      doc.rect(65, yPosition + 12, 8, 4, "F")
+      doc.setTextColor(37, 99, 235)
+      doc.text("Fish", 75, yPosition + 15)
+
+      // Vegetarian legend
+      doc.setFillColor(232, 245, 232)
+      doc.rect(105, yPosition + 12, 8, 4, "F")
+      doc.setTextColor(34, 197, 94)
+      doc.text("Vegetarian", 115, yPosition + 15)
+
+      yPosition += 30
     }
 
     // Add footer
