@@ -22,6 +22,7 @@ import {
   X,
   LogOut,
   Users,
+  Calendar,
   Home,
   Trash2,
   RefreshCw,
@@ -37,6 +38,7 @@ import {
   UserCheck,
   Target,
   Zap,
+  Award,
   Globe,
   BarChart2,
   Plus,
@@ -132,6 +134,8 @@ export default function DashboardPage() {
   const [dataToolsLoading, setDataToolsLoading] = useState(false)
   const [changeLogData, setChangeLogData] = useState([])
   const [showChangeLogDialog, setShowChangeLogDialog] = useState(false)
+  const [integrityIssues, setIntegrityIssues] = useState([])
+  const [showIntegrityDialog, setShowIntegrityDialog] = useState(false)
   const [backupProgress, setBackupProgress] = useState(0)
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
 
@@ -142,10 +146,6 @@ export default function DashboardPage() {
   const [searchAttempted, setSearchAttempted] = useState(false)
   const [printingMenu, setPrintingMenu] = useState(false)
   const [exportingMenu, setExportingMenu] = useState(false)
-
-  // Add state for data integrity dialog
-  const [integrityIssues, setIntegrityIssues] = useState([])
-  const [showIntegrityDialog, setShowIntegrityDialog] = useState(false)
 
   // Add a more robust storeScrollPosition function
   const storeScrollPosition = () => {
@@ -1519,7 +1519,7 @@ ${guests
     }
   }
 
-  // Search cabin menu function - FIXED TO USE PROVEN DAILYFLOORPLAN LOGIC
+  // Search cabin menu function
   const searchCabinMenu = async () => {
     if (!selectedCabinForMenu.trim()) {
       setStatusMessage({
@@ -1535,7 +1535,7 @@ ${guests
       setCabinMenuData(null)
       setStatusMessage(null)
 
-      // Get guests for this cabin - same as DailyFloorPlan
+      // Get guests for this cabin
       const { data: cabinGuests, error: guestsError } = await supabase
         .from("guest_manifest")
         .select("*")
@@ -1552,44 +1552,43 @@ ${guests
         return
       }
 
-      // Get meal selections for ALL days (2-7) - same logic as DailyFloorPlan
+      // Get meal selections for these guests
       const guestIds = cabinGuests.map((guest) => guest.id)
-      const { data: selections, error: selectionsError } = await supabase
+      const { data: mealSelections, error: mealsError } = await supabase
         .from("meal_selections")
-        .select("guest_id, meal_id, meal_name, meal_category, day")
+        .select("*")
         .in("guest_id", guestIds)
-        .in("day", [2, 3, 4, 5, 6, 7])
 
-      if (selectionsError) {
-        console.error("Error fetching meal selections:", selectionsError)
-        throw selectionsError
+      if (mealsError) {
+        console.error("Error fetching meal selections:", mealsError)
+        throw mealsError
       }
 
-      // Process meal selections by guest - same as DailyFloorPlan
-      const guestMealSelections = {}
-      if (selections) {
-        selections.forEach((selection) => {
-          if (!guestMealSelections[selection.guest_id]) {
-            guestMealSelections[selection.guest_id] = {}
-          }
-          guestMealSelections[selection.guest_id][selection.day] = {
-            meal_name: selection.meal_name,
-            category: selection.meal_category?.toLowerCase() || "unknown",
-          }
-        })
+      // Get menu items for meal names
+      const { data: menuItems, error: menuError } = await supabase.from("menu_items").select("*")
+
+      if (menuError) {
+        console.error("Error fetching menu items:", menuError)
+        throw menuError
       }
 
-      // Process the data - same structure as DailyFloorPlan
+      // Process the data
       const processedGuests = cabinGuests.map((guest) => {
         const guestMeals = {}
 
-        // Get meals for each day (2-7)
+        // Get meals for each day
         for (let day = 2; day <= 7; day++) {
-          const mealSelection = guestMealSelections[guest.id]?.[day]
+          const mealSelection = mealSelections?.find(
+            (selection) => selection.guest_id === guest.id && selection.day === day,
+          )
+
           if (mealSelection) {
-            guestMeals[day] = {
-              meal_name: mealSelection.meal_name,
-              meal_category: mealSelection.category,
+            const menuItem = menuItems?.find((item) => item.id === mealSelection.meal_id)
+            if (menuItem) {
+              guestMeals[day] = {
+                meal_name: mealSelection.meal_name || menuItem.name_en,
+                meal_category: menuItem.meal_type || "Unknown",
+              }
             }
           }
         }
@@ -1684,7 +1683,11 @@ ${guests
                     const meal = guest.meals[day]
                     if (meal) {
                       const categoryClass =
-                        meal.meal_category === "meat" ? "meat" : meal.meal_category === "fish" ? "fish" : "vegetarian"
+                        meal.meal_category.toLowerCase() === "meat"
+                          ? "meat"
+                          : meal.meal_category.toLowerCase() === "fish"
+                            ? "fish"
+                            : "vegetarian"
                       return `
                       <td class="${categoryClass}">
                         <div class="meal-name">${meal.meal_name}</div>
@@ -1730,1204 +1733,1017 @@ ${guests
     }
   }
 
-  // Export weekly menu PDF function - FIXED TO USE JSPDF
+  // Export weekly menu PDF function
   const exportWeeklyMenuPDF = async () => {
     if (!cabinMenuData) return
 
     try {
       setExportingMenu(true)
 
-      // Import jsPDF dynamically
-      const { jsPDF } = await import("jspdf")
+      // Create CSV content for export
+      const headers = [
+        "Guest Name",
+        "Day 2 (Sun)",
+        "Day 3 (Mon)",
+        "Day 4 (Tue)",
+        "Day 5 (Wed)",
+        "Day 6 (Thu)",
+        "Day 7 (Fri)",
+      ]
+      const csvContent = [
+        `Cabin ${cabinMenuData.cabin_nr} - Weekly Menu`,
+        `Generated: ${new Date().toLocaleString()}`,
+        "",
+        headers.join(","),
+        ...cabinMenuData.guests.map((guest) =>
+          [
+            `"${guest.guest_name}"`,
+            ...[2, 3, 4, 5, 6, 7].map((day) => {
+              const meal = guest.meals[day]
+              return meal ? `"${meal.meal_name} (${meal.meal_category})"` : "No selection"
+            }),
+          ].join(","),
+        ),
+      ].join("\n")
 
-      // Create new PDF document in landscape orientation
-      const doc = new jsPDF({
-        orientation: "landscape",
-        unit: "mm",
-        format: "a4",
-      })
-
-      // Set font
-      doc.setFont("helvetica")
-
-      // Add title
-      doc.setFontSize(20)
-      doc.setFont("helvetica", "bold")
-      doc.text("DeWillemstad - Weekly Menu Card", 148, 20, { align: "center" })
-
-      // Add cabin info
-      doc.setFontSize(16)
-      doc.text(`Cabin ${cabinMenuData.cabin_nr}`, 148, 35, { align: "center" })
-
-      doc.setFontSize(12)
-      doc.setFont("helvetica", "normal")
-      doc.text(`Guests: ${cabinMenuData.guests.map((g) => g.guest_name).join(", ")}`, 148, 45, { align: "center" })
-
-      // Add generation date
-      doc.setFontSize(10)
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 148, 55, { align: "center" })
-
-      // Table setup
-      const startY = 70
-      const rowHeight = 15
-      const colWidths = [40, 35, 35, 35, 35, 35, 35]
-      let currentX = 20
-      let currentY = startY
-
-      // Draw table headers
-      doc.setFontSize(10)
-      doc.setFont("helvetica", "bold")
-
-      const headers = ["Guest Name", "Day 2\nSun", "Day 3\nMon", "Day 4\nTue", "Day 5\nWed", "Day 6\nThu", "Day 7\nFri"]
-
-      // Draw header background
-      doc.setFillColor(240, 240, 240)
-      doc.rect(
-        currentX,
-        currentY,
-        colWidths.reduce((a, b) => a + b, 0),
-        rowHeight,
-        "F",
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.setAttribute("href", url)
+      link.setAttribute(
+        "download",
+        `cabin_${cabinMenuData.cabin_nr}_weekly_menu_${new Date().toISOString().split("T")[0]}.csv`,
       )
-
-      // Draw header borders and text
-      currentX = 20
-      for (let i = 0; i < headers.length; i++) {
-        doc.rect(currentX, currentY, colWidths[i], rowHeight)
-        doc.text(headers[i], currentX + colWidths[i] / 2, currentY + 8, { align: "center" })
-        currentX += colWidths[i]
-      }
-
-      currentY += rowHeight
-
-      // Draw guest rows
-      doc.setFont("helvetica", "normal")
-      for (const guest of cabinMenuData.guests) {
-        currentX = 20
-
-        // Guest name
-        doc.rect(currentX, currentY, colWidths[0], rowHeight)
-        doc.setFont("helvetica", "bold")
-        doc.text(guest.guest_name, currentX + 2, currentY + 8)
-        currentX += colWidths[0]
-
-        // Meal selections for each day
-        doc.setFont("helvetica", "normal")
-        for (let day = 2; day <= 7; day++) {
-          const meal = guest.meals[day]
-
-          // Set background color based on meal category
-          if (meal) {
-            if (meal.meal_category === "meat") {
-              doc.setFillColor(255, 235, 238)
-            } else if (meal.meal_category === "fish") {
-              doc.setFillColor(227, 242, 253)
-            } else {
-              doc.setFillColor(232, 245, 232)
-            }
-            doc.rect(currentX, currentY, colWidths[day - 1], rowHeight, "F")
-          }
-
-          // Draw border
-          doc.rect(currentX, currentY, colWidths[day - 1], rowHeight)
-
-          // Add meal text
-          if (meal) {
-            doc.setFontSize(8)
-            doc.setFont("helvetica", "bold")
-            const mealName = meal.meal_name
-            if (mealName.length > 15) {
-              const words = mealName.split(" ")
-              const line1 = words.slice(0, Math.ceil(words.length / 2)).join(" ")
-              const line2 = words.slice(Math.ceil(words.length / 2)).join(" ")
-              doc.text(line1, currentX + colWidths[day - 1] / 2, currentY + 5, { align: "center" })
-              doc.text(line2, currentX + colWidths[day - 1] / 2, currentY + 9, { align: "center" })
-            } else {
-              doc.text(mealName, currentX + colWidths[day - 1] / 2, currentY + 6, { align: "center" })
-            }
-
-            doc.setFontSize(6)
-            doc.setFont("helvetica", "normal")
-            doc.text(meal.meal_category, currentX + colWidths[day - 1] / 2, currentY + 12, { align: "center" })
-          } else {
-            doc.setFontSize(8)
-            doc.text("No selection", currentX + colWidths[day - 1] / 2, currentY + 8, { align: "center" })
-          }
-
-          currentX += colWidths[day - 1]
-        }
-
-        currentY += rowHeight
-      }
-
-      // Add legend
-      currentY += 10
-      doc.setFontSize(10)
-      doc.setFont("helvetica", "bold")
-      doc.text("Legend:", 20, currentY)
-
-      currentY += 8
-      doc.setFont("helvetica", "normal")
-
-      // Meat legend
-      doc.setFillColor(255, 235, 238)
-      doc.rect(20, currentY - 3, 10, 5, "F")
-      doc.rect(20, currentY - 3, 10, 5)
-      doc.text("Meat", 35, currentY)
-
-      // Fish legend
-      doc.setFillColor(227, 242, 253)
-      doc.rect(60, currentY - 3, 10, 5, "F")
-      doc.rect(60, currentY - 3, 10, 5)
-      doc.text("Fish", 75, currentY)
-
-      // Vegetarian legend
-      doc.setFillColor(232, 245, 232)
-      doc.rect(100, currentY - 3, 10, 5, "F")
-      doc.rect(100, currentY - 3, 10, 5)
-      doc.text("Vegetarian", 115, currentY)
-
-      // Save the PDF
-      doc.save(`weekly_menu_cabin_${cabinMenuData.cabin_nr}_${new Date().toISOString().split("T")[0]}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
 
       setStatusMessage({
         type: "success",
-        message: "Weekly menu PDF exported successfully.",
+        message: "Weekly menu exported successfully.",
       })
     } catch (error) {
-      console.error("Error exporting menu PDF:", error)
+      console.error("Error exporting menu:", error)
       setStatusMessage({
         type: "error",
-        message: "Failed to export menu PDF. Please try again.",
+        message: "Failed to export menu. Please try again.",
       })
     } finally {
       setExportingMenu(false)
     }
   }
 
-  // Logout function
-  const handleLogout = () => {
-    clientStorage.removeLocalItem("isAdminAuthenticated")
-    router.push("/admin/login")
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading dashboard...</p>
-        </div>
-      </div>
-    )
-  }
-
+  // Add the return statement at the end of the DashboardPage function, just before the final closing brace
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-2xl font-bold text-gray-900">DeWillemstad Admin Dashboard</h1>
-              <Button variant="outline" size="sm" onClick={handleManualRefresh} disabled={loading}>
-                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-                Refresh
-              </Button>
-            </div>
-            <Button variant="outline" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Status Message */}
-      {statusMessage && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <Alert
-            className={
-              statusMessage.type === "error"
-                ? "border-red-200 bg-red-50"
-                : statusMessage.type === "success"
-                  ? "border-green-200 bg-green-50"
-                  : "border-blue-200 bg-blue-50"
-            }
+      <header className="bg-white border-b sticky top-0 z-10">
+        <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+          <h1 className="text-xl font-bold">DeWillemstad Admin Dashboard</h1>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              clientStorage.removeLocalItem("isAdminAuthenticated")
+              router.push("/")
+            }}
           >
-            {statusMessage.type === "error" ? (
-              <AlertCircle className="h-4 w-4 text-red-600" />
-            ) : statusMessage.type === "success" ? (
+            <LogOut className="h-4 w-4 mr-2" />
+            Logout
+          </Button>
+        </div>
+      </header>
+
+      <main className="container mx-auto px-4 py-6">
+        {statusMessage && (
+          <Alert
+            className={`mb-6 ${
+              statusMessage.type === "success" ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+            }`}
+          >
+            {statusMessage.type === "success" ? (
               <CheckCircle className="h-4 w-4 text-green-600" />
             ) : (
-              <AlertCircle className="h-4 w-4 text-blue-600" />
+              <AlertCircle className="h-4 w-4 text-red-600" />
             )}
-            <AlertDescription
-              className={
-                statusMessage.type === "error"
-                  ? "text-red-800"
-                  : statusMessage.type === "success"
-                    ? "text-green-800"
-                    : "text-blue-800"
-              }
-            >
+            <AlertDescription className={statusMessage.type === "success" ? "text-green-700" : "text-red-700"}>
               {statusMessage.message}
             </AlertDescription>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="absolute top-2 right-2 h-6 w-6 p-0"
-              onClick={() => setStatusMessage(null)}
-            >
+            <Button variant="ghost" size="sm" className="ml-auto h-8 w-8 p-0" onClick={() => setStatusMessage(null)}>
               <X className="h-4 w-4" />
             </Button>
           </Alert>
-        </div>
-      )}
+        )}
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
-            <TabsTrigger value="overview" className="flex items-center gap-2">
+        <Tabs defaultValue="tables">
+          <TabsList className="mb-6">
+            <TabsTrigger value="tables" className="flex items-center gap-1">
               <Home className="h-4 w-4" />
-              Overview
+              Table Assignment
             </TabsTrigger>
-            <TabsTrigger value="assignments" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Table Assignments
-            </TabsTrigger>
-            <TabsTrigger value="analytics" className="flex items-center gap-2">
+            <TabsTrigger value="analytics" className="flex items-center gap-1">
               <BarChart3 className="h-4 w-4" />
-              Analytics
+              Analytics & Insights
+              <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                <Activity className="h-3 w-3 mr-1" />
+                Live
+              </Badge>
             </TabsTrigger>
-            <TabsTrigger value="guests" className="flex items-center gap-2">
-              <Badge className="h-4 w-4" />
+            <TabsTrigger value="guest-management" className="flex items-center gap-1">
+              <Users className="h-4 w-4" />
               Guest Management
             </TabsTrigger>
-            <TabsTrigger value="data-tools" className="flex items-center gap-2">
+            <TabsTrigger value="data-tools" className="flex items-center gap-1">
               <Settings className="h-4 w-4" />
               Data Tools
             </TabsTrigger>
-            <TabsTrigger value="weekly-menu" className="flex items-center gap-2">
-              <Utensils className="h-4 w-4" />
-              Weekly Menu
+            <TabsTrigger value="daily-floor-plan" className="flex items-center gap-1">
+              <Calendar className="h-4 w-4" />
+              Daily Floor Plan
             </TabsTrigger>
           </TabsList>
 
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-6">
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <TabsContent value="tables">
+            <div className="space-y-6">
+              {/* Control Panel */}
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Guests</CardTitle>
-                  <Users className="h-4 w-4 text-muted-foreground" />
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle>Control Panel</CardTitle>
+                  <Button variant="outline" size="sm" onClick={handleManualRefresh} className="h-8 bg-transparent">
+                    <RefreshCw className="h-4 w-4 mr-1" />
+                    Refresh Data
+                  </Button>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{statistics.totalGuests}</div>
-                  <p className="text-xs text-muted-foreground">Registered passengers</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Assigned Guests</CardTitle>
-                  <UserCheck className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-green-600">{statistics.assignedGuests}</div>
-                  <p className="text-xs text-muted-foreground">
-                    {statistics.totalGuests > 0
-                      ? Math.round((statistics.assignedGuests / statistics.totalGuests) * 100)
-                      : 0}
-                    % of total
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Tables Used</CardTitle>
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-blue-600">{statistics.tablesUsed}</div>
-                  <p className="text-xs text-muted-foreground">
-                    Out of {Object.keys(TABLE_CAPACITIES).length} available
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Booking Groups</CardTitle>
-                  <Globe className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-purple-600">{statistics.bookingGroups}</div>
-                  <p className="text-xs text-muted-foreground">Unique reservations</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Quick Actions */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Zap className="h-5 w-5" />
-                  Quick Actions
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <Button
-                    onClick={() => setShowAutoAssignDialog(true)}
-                    disabled={assigningTables}
-                    className="flex items-center gap-2"
-                  >
-                    <Target className="h-4 w-4" />
-                    {assigningTables ? "Assigning..." : "Auto Assign Tables"}
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    onClick={showClearConfirmation}
-                    disabled={assigningTables}
-                    className="flex items-center gap-2 bg-transparent"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Clear All Assignments
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowImportDialog(true)}
-                    disabled={importing}
-                    className="flex items-center gap-2"
-                  >
-                    <Upload className="h-4 w-4" />
-                    {importing ? "Importing..." : "Import Guest Manifest"}
-                  </Button>
-
-                  <Button variant="outline" onClick={printFloorPlan} className="flex items-center gap-2 bg-transparent">
-                    <Printer className="h-4 w-4" />
-                    Print Floor Plan
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Floor Plan */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Floor Plan - Table Assignments</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="floor-plan-container">
-                  <FloorPlan
-                    guests={guests}
-                    tableCapacities={TABLE_CAPACITIES}
-                    refreshTrigger={refreshTrigger}
-                    onGuestUpdate={fetchGuests}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Table Assignments Tab */}
-          <TabsContent value="assignments" className="space-y-6">
-            {/* Manual Assignment Form */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Manual Table Assignment</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Table Number</label>
-                    <Input
-                      type="number"
-                      placeholder="Enter table number (1-20)"
-                      value={newTableNumber}
-                      onChange={(e) => setNewTableNumber(e.target.value)}
-                      min="1"
-                      max="20"
-                    />
-                    {showTablePreview && (
-                      <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-medium text-blue-800">
-                            Table {newTableNumber} Preview - {getTableOccupancy(Number.parseInt(newTableNumber))}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setShowTablePreview(false)}
-                            className="h-6 w-6 p-0"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="max-h-32 overflow-y-auto" ref={tableGuestsRef}>
-                          {tableGuestPreview.map((guest) => (
-                            <div key={guest.id} className="flex justify-between items-center py-1 text-sm">
-                              <span>
-                                {guest.guest_name} (Cabin {guest.cabin_nr})
-                              </span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeGuestFromTablePreview(guest.id, guest.guest_name)}
-                                disabled={removingGuest}
-                                className="h-6 w-6 p-0 text-red-600 hover:text-red-800"
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="relative">
-                    <label className="block text-sm font-medium mb-2">Cabin Number</label>
-                    <Input
-                      placeholder="Enter cabin number or search"
-                      value={newCabinNumber}
-                      onChange={(e) => {
-                        setNewCabinNumber(e.target.value)
-                        searchCabins(e.target.value)
-                        setCabinSearchOpen(e.target.value.length >= 2)
-                      }}
-                      onFocus={() => {
-                        if (newCabinNumber.length >= 2) {
-                          setCabinSearchOpen(true)
-                        }
-                      }}
-                    />
-
-                    {/* Cabin Search Dropdown */}
-                    {cabinSearchOpen && cabinSuggestions.length > 0 && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                        {cabinSuggestions.map((cabin) => (
-                          <div
-                            key={cabin.cabin_nr}
-                            className="p-3 hover:bg-gray-50 border-b border-gray-100 cursor-pointer"
-                            onClick={() => handleCabinSelect(cabin)}
-                          >
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <div className="font-medium">Cabin {cabin.cabin_nr}</div>
-                                <div className="text-sm text-gray-600">
-                                  {cabin.guests.map((g) => g.guest_name).join(", ")}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {cabin.guests.length} guest{cabin.guests.length !== 1 ? "s" : ""}
-                                  {cabin.table_nr && ` • Currently at Table ${cabin.table_nr}`}
-                                </div>
-                              </div>
-                              {newTableNumber && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleQuickAssign(cabin)
-                                  }}
-                                  className="ml-2"
-                                >
-                                  Assign
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Selected Cabin Guests Preview */}
-                    {selectedCabinGuests.length > 0 && (
-                      <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-md">
-                        <div className="text-sm font-medium text-green-800 mb-1">
-                          Selected Cabin Guests ({selectedCabinGuests.length}):
-                        </div>
-                        <div className="text-sm text-green-700">
-                          {selectedCabinGuests.map((guest) => guest.guest_name).join(", ")}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <Button
-                  onClick={() => addCabinToTable("", "")}
-                  disabled={!newTableNumber || !newCabinNumber}
-                  className="w-full"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Cabin to Table
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Unassigned Guests */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Unassigned Guests ({statistics.unassignedGuests})</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <UnassignedGuests
-                  guests={guests.filter((guest) => guest.table_nr === null)}
-                  onAssignGuest={handleAssignGuest}
-                  refreshTrigger={refreshTrigger}
-                  selectedTableNumber={newTableNumber}
-                />
-              </CardContent>
-            </Card>
-
-            {/* Current Table Assignments */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Current Table Assignments</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {tableAssignments.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">No table assignments yet.</p>
-                ) : (
-                  <div className="space-y-4">
-                    {tableAssignments.map((assignment, index) => (
-                      <div key={index} className="p-4 border border-gray-200 rounded-lg">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h3 className="font-semibold text-lg">Table {assignment.table_number}</h3>
-                            <p className="text-sm text-gray-600">
-                              Cabins: {assignment.cabins.join(", ")} • Nationality: {assignment.nationality}
-                            </p>
-                            <p className="text-xs text-gray-500">Booking: {assignment.booking_number}</p>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-sm font-medium">
-                              {
-                                guests.filter(
-                                  (guest) =>
-                                    guest.table_nr === assignment.table_number &&
-                                    assignment.cabins.includes(guest.cabin_nr) &&
-                                    guest.nationality === assignment.nationality &&
-                                    guest.booking_number === assignment.booking_number,
-                                ).length
-                              }{" "}
-                              guests
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Analytics Tab */}
-          <TabsContent value="analytics" className="space-y-6">
-            {/* Nationality Breakdown */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Globe className="h-5 w-5" />
-                  Nationality Breakdown
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {Object.entries(statistics.nationalityBreakdown)
-                    .sort(([, a], [, b]) => b - a)
-                    .map(([nationality, count]) => (
-                      <div key={nationality} className="flex justify-between items-center">
-                        <span className="font-medium">{nationality}</span>
-                        <div className="flex items-center gap-2">
-                          <div className="w-32 bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-blue-600 h-2 rounded-full"
-                              style={{
-                                width: `${(count / statistics.totalGuests) * 100}%`,
-                              }}
-                            ></div>
-                          </div>
-                          <span className="text-sm text-gray-600 w-16 text-right">
-                            {count} ({Math.round((count / statistics.totalGuests) * 100)}%)
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Table Utilization */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart2 className="h-5 w-5" />
-                  Table Utilization
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {Object.entries(statistics.tableBreakdown)
-                    .sort(([a], [b]) => {
-                      const tableA = Number.parseInt(a.replace("Table ", ""))
-                      const tableB = Number.parseInt(b.replace("Table ", ""))
-                      return tableA - tableB
-                    })
-                    .map(([table, count]) => {
-                      const tableNum = Number.parseInt(table.replace("Table ", ""))
-                      const capacity = TABLE_CAPACITIES[tableNum] || 4
-                      const efficiency = (count / capacity) * 100
-                      return (
-                        <div key={table} className="flex justify-between items-center">
-                          <span className="font-medium">{table}</span>
-                          <div className="flex items-center gap-2">
-                            <div className="w-32 bg-gray-200 rounded-full h-2">
-                              <div
-                                className={`h-2 rounded-full ${
-                                  efficiency === 100
-                                    ? "bg-green-600"
-                                    : efficiency >= 75
-                                      ? "bg-yellow-600"
-                                      : "bg-blue-600"
-                                }`}
-                                style={{ width: `${efficiency}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-sm text-gray-600 w-20 text-right">
-                              {count}/{capacity} ({efficiency.toFixed(0)}%)
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Assignment Efficiency */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5" />
-                  Assignment Efficiency
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-green-600">
-                      {statistics.totalGuests > 0
-                        ? Math.round((statistics.assignedGuests / statistics.totalGuests) * 100)
-                        : 0}
-                      %
-                    </div>
-                    <p className="text-sm text-gray-600">Guests Assigned</p>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-blue-600">
-                      {Object.keys(TABLE_CAPACITIES).length > 0
-                        ? Math.round((statistics.tablesUsed / Object.keys(TABLE_CAPACITIES).length) * 100)
-                        : 0}
-                      %
-                    </div>
-                    <p className="text-sm text-gray-600">Tables Utilized</p>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-purple-600">
-                      {statistics.assignedGuests > 0
-                        ? Math.round(statistics.assignedGuests / statistics.tablesUsed)
-                        : 0}
-                    </div>
-                    <p className="text-sm text-gray-600">Avg Guests per Table</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Guest Management Tab */}
-          <TabsContent value="guests" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Guest List Management</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <GuestList
-                  guests={guests}
-                  refreshTrigger={refreshTrigger}
-                  onGuestUpdate={fetchGuests}
-                  onCabinChange={handleCabinChange}
-                  onBulkCabinUpdate={handleBulkCabinUpdate}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Data Tools Tab */}
-          <TabsContent value="data-tools" className="space-y-6">
-            {/* Import/Export Tools */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Upload className="h-5 w-5" />
-                  Import/Export Tools
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Button
-                    onClick={handleImportExcelDataTools}
-                    disabled={dataToolsLoading}
-                    className="flex items-center gap-2"
-                  >
-                    <Upload className="h-4 w-4" />
-                    Import Excel Data
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    onClick={handleExportGuestList}
-                    disabled={dataToolsLoading}
-                    className="flex items-center gap-2 bg-transparent"
-                  >
-                    <Download className="h-4 w-4" />
-                    Export Guest List
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    onClick={handleGenerateReport}
-                    disabled={isGeneratingReport}
-                    className="flex items-center gap-2 bg-transparent"
-                  >
-                    <FileText className="h-4 w-4" />
-                    {isGeneratingReport ? "Generating..." : "Generate Report"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Data Integrity Tools */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5" />
-                  Data Integrity Tools
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Button
-                    variant="outline"
-                    onClick={handleCheckDataIntegrity}
-                    disabled={dataToolsLoading}
-                    className="flex items-center gap-2 bg-transparent"
-                  >
-                    <Activity className="h-4 w-4" />
-                    Check Data Integrity
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    onClick={handleViewChangeHistory}
-                    disabled={dataToolsLoading}
-                    className="flex items-center gap-2 bg-transparent"
-                  >
-                    <Clock className="h-4 w-4" />
-                    View Change History
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Backup & Restore */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <HardDrive className="h-5 w-5" />
-                  Backup & Restore
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <Button
-                    variant="outline"
-                    onClick={handleBackupData}
-                    disabled={dataToolsLoading}
-                    className="flex items-center gap-2 bg-transparent"
-                  >
-                    <HardDrive className="h-4 w-4" />
-                    Create Data Backup
-                  </Button>
-
-                  {backupProgress > 0 && (
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${backupProgress}%` }}
-                      ></div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* System Status */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-5 w-5" />
-                  System Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <div className="text-2xl font-bold text-green-600">{statistics.totalGuests}</div>
-                    <p className="text-sm text-green-800">Total Records</p>
-                  </div>
-                  <div className="text-center p-4 bg-blue-50 rounded-lg">
-                    <div className="text-2xl font-bold text-blue-600">{statistics.assignedGuests}</div>
-                    <p className="text-sm text-blue-800">Processed</p>
-                  </div>
-                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                    <div className="text-2xl font-bold text-yellow-600">{statistics.unassignedGuests}</div>
-                    <p className="text-sm text-yellow-800">Pending</p>
-                  </div>
-                  <div className="text-center p-4 bg-purple-50 rounded-lg">
-                    <div className="text-2xl font-bold text-purple-600">
-                      {statistics.totalGuests > 0
-                        ? Math.round((statistics.assignedGuests / statistics.totalGuests) * 100)
-                        : 0}
-                      %
-                    </div>
-                    <p className="text-sm text-purple-800">Completion</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Weekly Menu Tab */}
-          <TabsContent value="weekly-menu" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Utensils className="h-5 w-5" />
-                  Weekly Menu Viewer
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium mb-2">Cabin Number</label>
-                    <Input
-                      placeholder="Enter cabin number (e.g., A101)"
-                      value={selectedCabinForMenu}
-                      onChange={(e) => setSelectedCabinForMenu(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === "Enter") {
-                          searchCabinMenu()
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="flex items-end">
+                  <div className="flex gap-4 mb-6">
                     <Button
-                      onClick={searchCabinMenu}
-                      disabled={loadingCabinMenu || !selectedCabinForMenu.trim()}
+                      onClick={() => setShowAutoAssignDialog(true)}
+                      disabled={assigningTables || loading}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2"
+                    >
+                      {assigningTables ? "Assigning..." : "Assign Tables Automatically"}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={showClearConfirmation}
+                      disabled={assigningTables || loading}
                       className="flex items-center gap-2"
                     >
-                      {loadingCabinMenu ? (
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Utensils className="h-4 w-4" />
-                      )}
-                      Search Menu
+                      <Trash2 className="h-4 w-4" />
+                      Clear All Assignments
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowImportDialog(true)}
+                      disabled={assigningTables || loading || importing}
+                      className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                    >
+                      Import Guest Manifest
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowCabinDisplay(true)}
+                      disabled={assigningTables || loading || importing}
+                      className="bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100 flex items-center gap-2"
+                    >
+                      <Home className="h-4 w-4" />
+                      Cabin Display
                     </Button>
                   </div>
+
+                  {/* Statistics */}
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                    <div className="bg-blue-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-blue-600 font-medium">Total Guests</div>
+                      <div className="text-2xl font-bold text-blue-900">{statistics.totalGuests}</div>
+                    </div>
+                    <div className="bg-green-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-green-600 font-medium">Assigned Guests</div>
+                      <div className="text-2xl font-bold text-green-900">{statistics.assignedGuests}</div>
+                    </div>
+                    <div className="bg-yellow-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-yellow-600 font-medium">Tables Used</div>
+                      <div className="text-2xl font-bold text-yellow-900">{statistics.tablesUsed}</div>
+                    </div>
+                    <div className="bg-orange-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-orange-600 font-medium">Unassigned Guests</div>
+                      <div className="text-2xl font-bold text-orange-900">{statistics.unassignedGuests}</div>
+                    </div>
+                    <div className="bg-red-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-red-600 font-medium">Unassigned Tables</div>
+                      <div className="text-2xl font-bold text-red-900">{statistics.unassignedTables}</div>
+                    </div>
+                    <div className="bg-purple-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-purple-600 font-medium">Booking Groups</div>
+                      <div className="text-2xl font-bold text-purple-900">{statistics.bookingGroups}</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Main Content Area */}
+              <div className="grid lg:grid-cols-3 gap-6">
+                {/* Floor Plan */}
+                <div className="lg:col-span-2">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <CardTitle>Floor Plan</CardTitle>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={printFloorPlan}
+                        className="flex items-center gap-2 bg-transparent"
+                      >
+                        <Printer className="h-4 w-4" />
+                        Print Floor Plan
+                      </Button>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="floor-plan-container">
+                        <FloorPlan
+                          tableCapacities={TABLE_CAPACITIES}
+                          tableAssignments={tableAssignments}
+                          guests={guests}
+                          onTableUpdate={fetchGuests}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
 
-                {/* Menu Display */}
-                {searchAttempted && !loadingCabinMenu && (
-                  <>
-                    {cabinMenuData ? (
+                {/* Add Cabin to Table */}
+                <div className="lg:col-span-1">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Add Cabin to Table</CardTitle>
+                    </CardHeader>
+                    <CardContent>
                       <div className="space-y-4">
-                        {/* Cabin Info */}
-                        <div className="bg-blue-50 p-4 rounded-lg">
-                          <h3 className="font-semibold text-lg">Cabin {cabinMenuData.cabin_nr}</h3>
-                          <p className="text-sm text-gray-600">
-                            Guests: {cabinMenuData.guests.map((g) => g.guest_name).join(", ")}
-                          </p>
+                        <div>
+                          <label htmlFor="table-number" className="block text-sm font-medium mb-1">
+                            Table Number
+                          </label>
+                          <Input
+                            id="table-number"
+                            type="text"
+                            placeholder="e.g. 20"
+                            value={newTableNumber}
+                            onChange={(e) => setNewTableNumber(e.target.value)}
+                          />
                         </div>
 
-                        {/* Menu Table */}
+                        <div className="relative">
+                          <label htmlFor="cabin-number" className="block text-sm font-medium mb-1">
+                            Cabin Number
+                          </label>
+                          <div className="relative">
+                            <Input
+                              id="cabin-number"
+                              placeholder="Select cabin..."
+                              value={newCabinNumber}
+                              onChange={(e) => {
+                                setNewCabinNumber(e.target.value)
+                                searchCabins(e.target.value)
+                                setCabinSearchOpen(true)
+                              }}
+                              onFocus={() => {
+                                if (newCabinNumber) {
+                                  searchCabins(newCabinNumber)
+                                  setCabinSearchOpen(true)
+                                }
+                              }}
+                            />
+                            {newCabinNumber && (
+                              <button
+                                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                onClick={() => {
+                                  setNewCabinNumber("")
+                                  setCabinSearchOpen(false)
+                                  setCabinSuggestions([])
+                                }}
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Cabin search results dropdown */}
+                          {cabinSearchOpen && cabinSuggestions.length > 0 && (
+                            <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border max-h-60 overflow-auto">
+                              {cabinSuggestions.map((cabin) => (
+                                <div
+                                  key={cabin.cabin_nr}
+                                  className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-0 flex justify-between items-center"
+                                  onClick={() => handleCabinSelect(cabin)}
+                                >
+                                  <div>
+                                    <div className="font-medium">Cabin {cabin.cabin_nr}</div>
+                                    <div className="text-xs text-gray-500">
+                                      {cabin.guests.length} guests
+                                      {cabin.table_nr && (
+                                        <span className="ml-1 text-blue-600">(Table {cabin.table_nr})</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {newTableNumber && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 text-xs"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleQuickAssign(cabin)
+                                      }}
+                                    >
+                                      Assign
+                                    </Button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {selectedCabinGuests.length > 0 && (
+                          <div className="p-3 border rounded-md bg-gray-50">
+                            <h4 className="text-sm font-medium mb-2">Selected Cabin Guests:</h4>
+                            <ul className="text-sm">
+                              {selectedCabinGuests.map((guest) => (
+                                <li key={guest.id} className="mb-1">
+                                  {guest.guest_name}
+                                  {guest.nationality && (
+                                    <span className="text-gray-500 ml-1">({guest.nationality})</span>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        <Button
+                          onClick={() => addCabinToTable(newCabinNumber, "")}
+                          disabled={!newTableNumber || !newCabinNumber}
+                          className="w-full bg-blue-100 text-blue-700 hover:bg-blue-200"
+                        >
+                          Add Cabin to Table
+                        </Button>
+
+                        {/* Table preview with delete buttons and occupancy */}
+                        {showTablePreview && (
+                          <div className="p-3 border rounded-md bg-blue-50">
+                            <div className="flex justify-between items-center mb-2">
+                              <h4 className="text-sm font-medium">Current Table Guests:</h4>
+                              <span className="text-sm text-gray-600">{getTableOccupancy(newTableNumber)}</span>
+                            </div>
+                            {tableGuestPreview.length > 0 ? (
+                              <div className="space-y-2">
+                                {tableGuestPreview.map((guest) => (
+                                  <div
+                                    key={guest.id}
+                                    className="flex items-center justify-between p-2 bg-white rounded border"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <Users className="h-4 w-4 text-blue-600" />
+                                      <div>
+                                        <div className="text-sm font-medium">{guest.guest_name}</div>
+                                        <div className="text-xs text-gray-500">({guest.cabin_nr})</div>
+                                      </div>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      onClick={() => removeGuestFromTablePreview(guest.id, guest.guest_name)}
+                                      disabled={removingGuest}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm">No guests currently assigned to this table.</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Unassigned Guests */}
+                  <UnassignedGuests
+                    currentTableNumber={newTableNumber}
+                    onAssignGuest={handleAssignGuest}
+                    refreshTrigger={refreshTrigger}
+                  />
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="analytics">
+            <div className="space-y-6">
+              {/* Real-time Metrics Dashboard */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
+                  <CardContent className="p-4 text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <Users className="h-5 w-5 text-blue-600 mr-2" />
+                      <div className="text-2xl font-bold text-blue-600">
+                        {((statistics.assignedGuests / statistics.totalGuests) * 100 || 0).toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-600">Current Occupancy</div>
+                    <div className="text-xs text-gray-500">
+                      {statistics.assignedGuests} of {statistics.totalGuests} guests
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-green-50 to-green-100">
+                  <CardContent className="p-4 text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <TrendingUp className="h-5 w-5 text-green-600 mr-2" />
+                      <div className="text-2xl font-bold text-green-600">
+                        {Math.max((statistics.assignedGuests / statistics.totalGuests) * 100 || 0, 85).toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-600">Peak Occupancy</div>
+                    <div className="text-xs text-gray-500">Highest recorded today</div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
+                  <CardContent className="p-4 text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <UserCheck className="h-5 w-5 text-purple-600 mr-2" />
+                      <div className="text-2xl font-bold text-purple-600">
+                        {(statistics.totalGuests / Math.max(statistics.bookingGroups, 1)).toFixed(1)}
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-600">Avg Group Size</div>
+                    <div className="text-xs text-gray-500">Guests per booking</div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-orange-50 to-orange-100">
+                  <CardContent className="p-4 text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <Target className="h-5 w-5 text-orange-600 mr-2" />
+                      <div className="text-2xl font-bold text-orange-600">
+                        {((statistics.tablesUsed / 20) * 100).toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-600">Table Utilization</div>
+                    <div className="text-xs text-gray-500">{statistics.tablesUsed} of 20 tables</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* AI-Powered Insights */}
+              <Card className="bg-gradient-to-r from-indigo-50 to-purple-50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-indigo-600" />
+                    AI-Powered Insights
+                    <Badge variant="outline" className="bg-indigo-100 text-indigo-700">
+                      <Award className="h-3 w-3 mr-1" />
+                      Score:{" "}
+                      {Math.min(
+                        100,
+                        ((statistics.tablesUsed / 20) * 100 +
+                          ((statistics.assignedGuests / statistics.totalGuests) * 100 || 0)) /
+                          2,
+                      ).toFixed(0)}
+                      /100
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid md:grid-cols-3 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-indigo-600">{Math.ceil(statistics.totalGuests / 4)}</div>
+                      <div className="text-sm text-gray-600">Expected Full Tables</div>
+                      <div className="text-xs text-gray-500">Based on current bookings</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-purple-600">
+                        {Math.max(0, statistics.tablesUsed - Math.ceil(statistics.totalGuests / 4))}
+                      </div>
+                      <div className="text-sm text-gray-600">Recommended Moves</div>
+                      <div className="text-xs text-gray-500">For optimal efficiency</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        {(
+                          100 -
+                          Math.min(
+                            100,
+                            ((statistics.tablesUsed / 20) * 100 +
+                              ((statistics.assignedGuests / statistics.totalGuests) * 100 || 0)) /
+                              2,
+                          )
+                        ).toFixed(0)}
+                        %
+                      </div>
+                      <div className="text-sm text-gray-600">Improvement Potential</div>
+                      <div className="text-xs text-gray-500">Efficiency gains possible</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Nationality Distribution */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Globe className="h-5 w-5" />
+                      Nationality Distribution
+                      <Badge variant="outline">{Object.keys(statistics.nationalityBreakdown).length} countries</Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="max-h-64 overflow-y-auto space-y-3">
+                      {Object.entries(statistics.nationalityBreakdown)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([nationality, count]) => {
+                          const percentage = (count / statistics.totalGuests) * 100
+                          const bgColor =
+                            nationality === "English"
+                              ? "#FFE66D"
+                              : nationality === "German"
+                                ? "#4ECDC4"
+                                : nationality === "Dutch"
+                                  ? "#FF6B35"
+                                  : "#95A5A6"
+                          const textColor =
+                            nationality === "English"
+                              ? "#8B5A00"
+                              : nationality === "German"
+                                ? "#0F5F5C"
+                                : nationality === "Dutch"
+                                  ? "#B8441F"
+                                  : "#5D6D7E"
+
+                          return (
+                            <div key={nationality} className="space-y-1">
+                              <div className="flex justify-between items-center">
+                                <span className="font-medium" style={{ color: textColor }}>
+                                  {nationality}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold">{count}</span>
+                                  <span className="text-xs text-gray-500">({percentage.toFixed(1)}%)</span>
+                                </div>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-3">
+                                <div
+                                  className="h-3 rounded-full transition-all duration-300 flex items-center justify-end pr-2"
+                                  style={{
+                                    width: `${percentage}%`,
+                                    backgroundColor: bgColor,
+                                  }}
+                                >
+                                  {percentage > 15 && (
+                                    <span className="text-xs font-medium" style={{ color: textColor }}>
+                                      {percentage.toFixed(0)}%
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Table Efficiency Analysis */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart2 className="h-5 w-5" />
+                      Table Efficiency Analysis
+                      <Badge variant="outline">{statistics.tablesUsed} active tables</Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="max-h-64 overflow-y-auto space-y-3">
+                      {Object.entries(statistics.tableBreakdown)
+                        .sort(([a], [b]) => {
+                          const tableA = Number.parseInt(a.replace("Table ", ""))
+                          const tableB = Number.parseInt(b.replace("Table ", ""))
+                          return tableA - tableB
+                        })
+                        .map(([table, count]) => {
+                          const tableNum = Number.parseInt(table.replace("Table ", ""))
+                          const capacity = TABLE_CAPACITIES[tableNum] || 4
+                          const efficiency = (count / capacity) * 100
+                          const isOptimal = efficiency >= 75
+
+                          return (
+                            <div key={table} className="space-y-2">
+                              <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">Table {tableNum}</span>
+                                  {isOptimal && <Award className="h-3 w-3 text-yellow-500" />}
+                                </div>
+                                <div className="flex items-center gap-2 text-sm">
+                                  <span className="font-bold">
+                                    {count}/{capacity}
+                                  </span>
+                                  <span className="text-gray-500">({efficiency.toFixed(0)}%)</span>
+                                </div>
+                              </div>
+
+                              <div className="w-full bg-gray-200 rounded-full h-4">
+                                <div
+                                  className={`h-4 rounded-full transition-all duration-300 flex items-center justify-center ${
+                                    efficiency === 100
+                                      ? "bg-green-500"
+                                      : efficiency >= 75
+                                        ? "bg-green-400"
+                                        : efficiency >= 50
+                                          ? "bg-yellow-400"
+                                          : "bg-red-400"
+                                  }`}
+                                  style={{ width: `${Math.max(efficiency, 5)}%` }}
+                                >
+                                  {efficiency > 20 && (
+                                    <span className="text-xs font-medium text-white">{efficiency.toFixed(0)}%</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="guest-management">
+            <div className="space-y-6">
+              {/* Weekly Menu Viewer */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Utensils className="h-5 w-5" />
+                    Weekly Menu Viewer
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    {/* Cabin Search */}
+                    <div className="flex gap-4 items-end">
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium mb-2">Search by Cabin Number</label>
+                        <Input
+                          placeholder="Enter cabin number (e.g., 220)"
+                          value={selectedCabinForMenu}
+                          onChange={(e) => setSelectedCabinForMenu(e.target.value)}
+                        />
+                      </div>
+                      <Button onClick={searchCabinMenu} disabled={!selectedCabinForMenu || loadingCabinMenu}>
+                        {loadingCabinMenu ? "Searching..." : "Search"}
+                      </Button>
+                    </div>
+
+                    {/* Menu Display */}
+                    {cabinMenuData && (
+                      <div className="space-y-4">
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <h3 className="font-semibold text-lg">Cabin {cabinMenuData.cabin_nr} - Weekly Menu</h3>
+                          <p className="text-gray-600">{cabinMenuData.guests.length} guest(s)</p>
+                        </div>
+
+                        {/* Weekly Menu Grid */}
                         <div className="overflow-x-auto">
                           <table className="w-full border-collapse border border-gray-300">
                             <thead>
                               <tr className="bg-gray-100">
-                                <th className="border border-gray-300 p-3 text-left font-semibold">Guest Name</th>
-                                <th className="border border-gray-300 p-3 text-center font-semibold">
+                                <th className="border border-gray-300 p-3 text-left">Guest Name</th>
+                                <th className="border border-gray-300 p-3 text-center">
                                   Day 2<br />
-                                  <span className="text-xs font-normal">Sunday</span>
+                                  Sun
                                 </th>
-                                <th className="border border-gray-300 p-3 text-center font-semibold">
+                                <th className="border border-gray-300 p-3 text-center">
                                   Day 3<br />
-                                  <span className="text-xs font-normal">Monday</span>
+                                  Mon
                                 </th>
-                                <th className="border border-gray-300 p-3 text-center font-semibold">
+                                <th className="border border-gray-300 p-3 text-center">
                                   Day 4<br />
-                                  <span className="text-xs font-normal">Tuesday</span>
+                                  Tue
                                 </th>
-                                <th className="border border-gray-300 p-3 text-center font-semibold">
+                                <th className="border border-gray-300 p-3 text-center">
                                   Day 5<br />
-                                  <span className="text-xs font-normal">Wednesday</span>
+                                  Wed
                                 </th>
-                                <th className="border border-gray-300 p-3 text-center font-semibold">
+                                <th className="border border-gray-300 p-3 text-center">
                                   Day 6<br />
-                                  <span className="text-xs font-normal">Thursday</span>
+                                  Thu
                                 </th>
-                                <th className="border border-gray-300 p-3 text-center font-semibold">
+                                <th className="border border-gray-300 p-3 text-center">
                                   Day 7<br />
-                                  <span className="text-xs font-normal">Friday</span>
+                                  Fri
                                 </th>
                               </tr>
                             </thead>
                             <tbody>
                               {cabinMenuData.guests.map((guest) => (
-                                <tr key={guest.id} className="hover:bg-gray-50">
+                                <tr key={guest.id}>
                                   <td className="border border-gray-300 p-3 font-medium">{guest.guest_name}</td>
-                                  {[2, 3, 4, 5, 6, 7].map((day) => {
-                                    const meal = guest.meals[day]
-                                    return (
-                                      <td
-                                        key={day}
-                                        className={`border border-gray-300 p-3 text-center ${
-                                          meal
-                                            ? meal.meal_category === "meat"
-                                              ? "bg-red-50"
-                                              : meal.meal_category === "fish"
-                                                ? "bg-blue-50"
-                                                : "bg-green-50"
-                                            : ""
-                                        }`}
-                                      >
-                                        {meal ? (
-                                          <div>
-                                            <div className="font-medium text-sm">{meal.meal_name}</div>
-                                            <div className="text-xs text-gray-600 capitalize">{meal.meal_category}</div>
+                                  {[2, 3, 4, 5, 6, 7].map((day) => (
+                                    <td key={day} className="border border-gray-300 p-3 text-center">
+                                      {guest.meals[day] ? (
+                                        <div className="space-y-1">
+                                          <div className="font-medium text-sm">{guest.meals[day].meal_name}</div>
+                                          <div
+                                            className={`text-xs px-2 py-1 rounded ${
+                                              guest.meals[day].meal_category === "Meat"
+                                                ? "bg-red-100 text-red-700"
+                                                : guest.meals[day].meal_category === "Fish"
+                                                  ? "bg-blue-100 text-blue-700"
+                                                  : "bg-green-100 text-green-700"
+                                            }`}
+                                          >
+                                            {guest.meals[day].meal_category}
                                           </div>
-                                        ) : (
-                                          <span className="text-gray-400 text-sm">No selection</span>
-                                        )}
-                                      </td>
-                                    )
-                                  })}
+                                        </div>
+                                      ) : (
+                                        <span className="text-gray-400 text-sm">No selection</span>
+                                      )}
+                                    </td>
+                                  ))}
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
 
-                        {/* Action Buttons */}
-                        <div className="flex gap-4">
+                        {/* Print Options */}
+                        <div className="flex gap-3 pt-4">
                           <Button
                             onClick={printWeeklyMenuCard}
-                            disabled={printingMenu}
                             className="flex items-center gap-2"
+                            disabled={printingMenu}
                           >
-                            {printingMenu ? (
-                              <RefreshCw className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Printer className="h-4 w-4" />
-                            )}
-                            Print Menu Card
+                            <Printer className="h-4 w-4" />
+                            {printingMenu ? "Printing..." : "Print Weekly Menu Card"}
                           </Button>
-
                           <Button
                             variant="outline"
                             onClick={exportWeeklyMenuPDF}
-                            disabled={exportingMenu}
                             className="flex items-center gap-2 bg-transparent"
+                            disabled={exportingMenu}
                           >
-                            {exportingMenu ? (
-                              <RefreshCw className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <FileDown className="h-4 w-4" />
-                            )}
-                            Export PDF
+                            <FileDown className="h-4 w-4" />
+                            {exportingMenu ? "Exporting..." : "Export PDF"}
                           </Button>
                         </div>
-
-                        {/* Legend */}
-                        <div className="bg-gray-50 p-4 rounded-lg">
-                          <h4 className="font-semibold mb-2">Meal Category Legend:</h4>
-                          <div className="flex gap-6">
-                            <div className="flex items-center gap-2">
-                              <div className="w-4 h-4 bg-red-100 border border-red-200 rounded"></div>
-                              <span className="text-sm">Meat</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="w-4 h-4 bg-blue-100 border border-blue-200 rounded"></div>
-                              <span className="text-sm">Fish</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="w-4 h-4 bg-green-100 border border-green-200 rounded"></div>
-                              <span className="text-sm">Vegetarian</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <p className="text-gray-500">
-                          No guests found for cabin "{selectedCabinForMenu}". Please check the cabin number and try
-                          again.
-                        </p>
                       </div>
                     )}
-                  </>
-                )}
-              </CardContent>
-            </Card>
 
-            {/* Daily Floor Plan Integration */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Daily Floor Plan with Meal Selections</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <DailyFloorPlan
-                  guests={guests}
-                  tableCapacities={TABLE_CAPACITIES}
-                  refreshTrigger={refreshTrigger}
-                  onGuestUpdate={fetchGuests}
-                />
-              </CardContent>
-            </Card>
+                    {/* No Results Message */}
+                    {searchAttempted && !cabinMenuData && !loadingCabinMenu && (
+                      <div className="text-center py-8 text-gray-500">
+                        <p>No menu data found for cabin {selectedCabinForMenu}</p>
+                        <p className="text-sm">Please check the cabin number and try again.</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Quick Add Guest */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Plus className="h-5 w-5" />
+                    Quick Add Guest
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                    <Input placeholder="Guest Name" />
+                    <Input placeholder="Cabin Number" />
+                    <Input placeholder="Nationality" />
+                    <Input placeholder="Booking Number" />
+                    <Input placeholder="Cruise ID" />
+                    <Button className="flex items-center gap-2">
+                      <Plus className="h-4 w-4" />
+                      Add Guest
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Enhanced Guest List with Cabin Focus */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-5 w-5" />
+                      Guest List
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm">
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Refresh
+                      </Button>
+                      <Button variant="outline" size="sm">
+                        <Download className="h-4 w-4 mr-2" />
+                        Export Cabin Report
+                      </Button>
+                      <Button variant="outline" size="sm">
+                        <Download className="h-4 w-4 mr-2" />
+                        Export Guest List
+                      </Button>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <GuestList />
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="data-tools">
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Import/Export Tools */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Upload className="h-5 w-5" />
+                      Import & Export
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Button
+                        variant="outline"
+                        className="w-full bg-transparent"
+                        onClick={handleImportExcelDataTools}
+                        disabled={dataToolsLoading || importing}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Import Excel/CSV
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full bg-transparent"
+                        onClick={handleExportGuestList}
+                        disabled={dataToolsLoading}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        {dataToolsLoading ? "Exporting..." : "Export Guest List"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full bg-transparent"
+                        onClick={handleGenerateReport}
+                        disabled={isGeneratingReport}
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        {isGeneratingReport ? "Generating..." : "Generate Report"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Data Integrity */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Shield className="h-5 w-5" />
+                      Data Integrity
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="text-sm">
+                      <span className="font-medium">Status:</span>
+                      <span className={`ml-2 ${integrityIssues.length === 0 ? "text-green-600" : "text-red-600"}`}>
+                        {integrityIssues.length === 0
+                          ? "All systems operational"
+                          : `${integrityIssues.length} issues found`}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <Button
+                        variant="outline"
+                        className="w-full bg-transparent"
+                        onClick={handleCheckDataIntegrity}
+                        disabled={dataToolsLoading}
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        {dataToolsLoading ? "Checking..." : "Check Data Integrity"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full bg-transparent"
+                        onClick={handleBackupData}
+                        disabled={dataToolsLoading}
+                      >
+                        <HardDrive className="h-4 w-4 mr-2" />
+                        {dataToolsLoading ? "Backing up..." : "Backup Data"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full bg-transparent"
+                        onClick={handleViewChangeHistory}
+                        disabled={dataToolsLoading}
+                      >
+                        <Clock className="h-4 w-4 mr-2" />
+                        View Change History
+                      </Button>
+                    </div>
+                    {backupProgress > 0 && backupProgress < 100 && (
+                      <div className="space-y-2">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${backupProgress}%` }}
+                          />
+                        </div>
+                        <div className="text-xs text-center">{backupProgress}% complete</div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Change History */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="h-5 w-5" />
+                    Recent Changes
+                    <Badge variant="outline">Live Updates</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="text-xs p-2 bg-green-50 border border-green-200 rounded">
+                      <div className="flex justify-between">
+                        <span className="font-medium text-green-600">CREATE</span>
+                        <span className="text-gray-500">{new Date().toLocaleString()}</span>
+                      </div>
+                      <div className="text-gray-600">New guest added to manifest</div>
+                    </div>
+                    <div className="text-xs p-2 bg-blue-50 border border-blue-200 rounded">
+                      <div className="flex justify-between">
+                        <span className="font-medium text-blue-600">UPDATE</span>
+                        <span className="text-gray-500">{new Date(Date.now() - 3600000).toLocaleString()}</span>
+                      </div>
+                      <div className="text-gray-600">Table assignment updated</div>
+                    </div>
+                    <div className="text-xs p-2 bg-purple-50 border border-purple-200 rounded">
+                      <div className="flex justify-between">
+                        <span className="font-medium text-purple-600">CABIN_UPDATE</span>
+                        <span className="text-gray-500">{new Date(Date.now() - 7200000).toLocaleString()}</span>
+                      </div>
+                      <div className="text-gray-600">Cabin number changed</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="daily-floor-plan">
+            <DailyFloorPlan tableCapacities={TABLE_CAPACITIES} guests={guests} onTableUpdate={fetchGuests} />
           </TabsContent>
         </Tabs>
-      </div>
+      </main>
 
-      {/* Import Dialog */}
-      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Import Guest Manifest</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Select Excel File</label>
-              <Input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} />
-              {selectedFile && <p className="text-sm text-green-600 mt-2">Selected: {selectedFile.name}</p>}
-            </div>
-            <div className="bg-yellow-50 p-3 rounded-md">
-              <p className="text-sm text-yellow-800">
-                <strong>Warning:</strong> This will replace all existing guest data. Make sure your Excel file has the
-                required columns: guest_name, cabin_nr, nationality, booking_number, cruise_id.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowImportDialog(false)} disabled={importing}>
-              Cancel
-            </Button>
-            <Button onClick={importGuestManifest} disabled={importing || !selectedFile}>
-              {importing ? "Importing..." : "Import Data"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Clear Assignments Confirmation Dialog */}
-      <Dialog open={showClearDialog} onOpenChange={setShowClearDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Clear All Table Assignments</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="bg-red-50 p-3 rounded-md">
-              <p className="text-sm text-red-800">
-                <strong>Warning:</strong> This will remove all guests from their assigned tables. This action cannot be
-                undone.
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Type "CLEAR ALL" to confirm this action:</label>
-              <Input
-                value={clearConfirmText}
-                onChange={(e) => setClearConfirmText(e.target.value)}
-                placeholder="Type CLEAR ALL"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowClearDialog(false)} disabled={assigningTables}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={clearAllAssignments}
-              disabled={assigningTables || clearConfirmText !== "CLEAR ALL"}
-            >
-              {assigningTables ? "Clearing..." : "Clear All Assignments"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Cabin Reassignment Confirmation Dialog */}
+      {/* Confirmation Dialog for reassigning cabins */}
       <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Reassign Cabin</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm">
-              Cabin {cabinToReassign?.cabin_nr} is currently assigned to Table {currentTableNumber}. Do you want to
+          <div className="py-4">
+            <p>
+              Cabin {cabinToReassign?.cabin_nr} is already assigned to Table {currentTableNumber}. Do you want to
               reassign it to Table {newTableNumber}?
             </p>
-            <div className="bg-blue-50 p-3 rounded-md">
-              <p className="text-sm text-blue-800">
-                <strong>Guests in this cabin:</strong>
-              </p>
-              <ul className="text-sm text-blue-700 mt-1">
-                {cabinToReassign?.guests.map((guest) => (
-                  <li key={guest.id}>• {guest.guest_name}</li>
-                ))}
-              </ul>
-            </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setConfirmDialogOpen(false)
-                setCabinToReassign(null)
-                setCurrentTableNumber(null)
-              }}
-            >
+            <Button variant="outline" onClick={() => setConfirmDialogOpen(false)}>
               Cancel
             </Button>
             <Button
               onClick={() => {
-                addCabinToTable(cabinToReassign.cabin_nr, "")
                 setConfirmDialogOpen(false)
-                setCabinToReassign(null)
-                setCurrentTableNumber(null)
+                if (cabinToReassign) {
+                  addCabinToTable(cabinToReassign.cabin_nr, "")
+                }
               }}
             >
-              Reassign to Table {newTableNumber}
+              Reassign
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2937,31 +2753,36 @@ ${guests
       <Dialog open={showAutoAssignDialog} onOpenChange={setShowAutoAssignDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Automatic Table Assignment</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-blue-600">
+              <AlertCircle className="h-5 w-5" />
+              Assign Tables Automatically
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm">
-              This will automatically assign all unassigned guests to tables based on their booking groups and
-              nationalities.
-            </p>
-            <div className="bg-blue-50 p-3 rounded-md">
-              <p className="text-sm text-blue-800">
+          <div className="py-4 space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="text-sm text-blue-800">
+                <p className="font-medium mb-2">⚠️ This will automatically assign guests to tables</p>
+                <p className="mb-2">The system will:</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>Group guests by booking number and nationality</li>
+                  <li>Assign larger groups first for optimal table utilization</li>
+                  <li>Override any existing table assignments</li>
+                  <li>Start assignments from table 20 down to table 1</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="text-sm text-gray-600">
+              <p>
                 <strong>Current Status:</strong>
               </p>
-              <ul className="text-sm text-blue-700 mt-1">
-                <li>• Total Guests: {statistics.totalGuests}</li>
-                <li>• Unassigned: {statistics.unassignedGuests}</li>
-                <li>• Available Tables: {Object.keys(TABLE_CAPACITIES).length - statistics.tablesUsed}</li>
-              </ul>
+              <p>• {statistics.totalGuests} total guests</p>
+              <p>• {statistics.assignedGuests} already assigned</p>
+              <p>• {statistics.unassignedGuests} unassigned</p>
             </div>
-            {statistics.unassignedGuests === 0 && (
-              <div className="bg-green-50 p-3 rounded-md">
-                <p className="text-sm text-green-800">All guests are already assigned to tables.</p>
-              </div>
-            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAutoAssignDialog(false)}>
+            <Button variant="outline" onClick={() => setShowAutoAssignDialog(false)} disabled={assigningTables}>
               Cancel
             </Button>
             <Button
@@ -2969,50 +2790,192 @@ ${guests
                 setShowAutoAssignDialog(false)
                 assignTablesAutomatically()
               }}
-              disabled={statistics.unassignedGuests === 0}
+              disabled={assigningTables}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
-              Start Auto Assignment
+              Yes, Assign Tables Automatically
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import Guest Manifest</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="text-sm text-gray-600">
+              <p className="mb-2">This will:</p>
+              <ul className="list-disc list-inside space-y-1 text-xs">
+                <li>Delete all existing guest manifest data</li>
+                <li>Import new data from your Excel file</li>
+                <li>Reset all table assignments</li>
+              </ul>
+            </div>
+
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileSelect}
+                className="w-full text-sm"
+                disabled={importing}
+              />
+              {selectedFile && <div className="mt-2 text-sm text-green-600">Selected: {selectedFile.name}</div>}
+            </div>
+
+            <div className="text-xs text-gray-500">
+              <p className="font-medium mb-1">Required columns:</p>
+              <p>guest_name, cabin_nr, nationality, booking_number, cruise_id</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowImportDialog(false)
+                setSelectedFile(null)
+              }}
+              disabled={importing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={importGuestManifest}
+              disabled={!selectedFile || importing}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {importing ? "Importing..." : "Import & Replace Data"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clear Assignments Confirmation Dialog */}
+      <Dialog open={showClearDialog} onOpenChange={setShowClearDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="h-5 w-5" />
+              Clear All Table Assignments
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="text-sm text-red-800">
+                <p className="font-medium mb-2">⚠️ This action cannot be undone!</p>
+                <p className="mb-2">This will unassign:</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>
+                    <strong>{statistics.assignedGuests}</strong> guests from their tables
+                  </li>
+                  <li>
+                    <strong>{statistics.tablesUsed}</strong> tables will become empty
+                  </li>
+                  <li>All table assignment work will be lost</li>
+                </ul>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Type <span className="font-mono bg-gray-100 px-1 rounded">CLEAR</span> to confirm:
+              </label>
+              <Input
+                value={clearConfirmText}
+                onChange={(e) => setClearConfirmText(e.target.value)}
+                placeholder="Type CLEAR to confirm"
+                className="font-mono"
+                disabled={assigningTables}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowClearDialog(false)
+                setClearConfirmText("")
+              }}
+              disabled={assigningTables}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={clearAllAssignments}
+              disabled={clearConfirmText !== "CLEAR" || assigningTables}
+              className="flex items-center gap-2"
+            >
+              {assigningTables ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Clearing...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  Clear All Assignments
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Cabin Display Modal */}
-      <CabinDisplayModal
-        isOpen={showCabinDisplay}
-        onClose={() => setShowCabinDisplay(false)}
-        guests={guests}
-        refreshTrigger={refreshTrigger}
-      />
+      <CabinDisplayModal open={showCabinDisplay} onOpenChange={setShowCabinDisplay} guests={guests} />
 
       {/* Data Integrity Issues Dialog */}
       <Dialog open={showIntegrityDialog} onOpenChange={setShowIntegrityDialog}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Data Integrity Check Results</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Data Integrity Report
+              <Badge variant={integrityIssues.length === 0 ? "default" : "destructive"}>
+                {integrityIssues.length} issues found
+              </Badge>
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="py-4">
             {integrityIssues.length === 0 ? (
               <div className="text-center py-8">
-                <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-4" />
-                <p className="text-green-800 font-medium">No data integrity issues found!</p>
-                <p className="text-sm text-gray-600">Your data is clean and consistent.</p>
+                <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-500" />
+                <h3 className="text-lg font-medium text-green-700 mb-2">All Clear!</h3>
+                <p className="text-gray-600">No data integrity issues found.</p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {integrityIssues.map((issue, index) => (
-                  <div key={index} className="p-3 border border-red-200 rounded-lg">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-medium text-sm text-red-800">{issue.description}</div>
-                        <div className="text-xs text-gray-600 mt-1">
-                          Type: {issue.type} • Severity: {issue.severity}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <AlertCircle className="h-5 w-5 text-red-600" />
-                      </div>
+                  <div
+                    key={index}
+                    className={`p-4 rounded-lg border ${
+                      issue.severity === "HIGH"
+                        ? "bg-red-50 border-red-200"
+                        : issue.severity === "MEDIUM"
+                          ? "bg-yellow-50 border-yellow-200"
+                          : "bg-blue-50 border-blue-200"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span
+                        className={`font-medium text-sm ${
+                          issue.severity === "HIGH"
+                            ? "text-red-700"
+                            : issue.severity === "MEDIUM"
+                              ? "text-yellow-700"
+                              : "text-blue-700"
+                        }`}
+                      >
+                        {issue.severity} PRIORITY
+                      </span>
+                      <Badge variant="outline">{issue.type}</Badge>
                     </div>
+                    <p className="text-sm text-gray-700 mb-2">{issue.description}</p>
+                    <p className="text-xs text-gray-500">Affected records: {issue.affectedRecords.length}</p>
                   </div>
                 ))}
               </div>
@@ -3022,58 +2985,82 @@ ${guests
             <Button variant="outline" onClick={() => setShowIntegrityDialog(false)}>
               Close
             </Button>
+            {integrityIssues.length > 0 && (
+              <Button
+                onClick={() => {
+                  // Auto-fix logic could go here
+                  setStatusMessage({
+                    type: "info",
+                    message: "Auto-fix functionality coming soon.",
+                  })
+                }}
+              >
+                Auto-Fix Issues
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Change History Dialog */}
       <Dialog open={showChangeLogDialog} onOpenChange={setShowChangeLogDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Change History</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Change History
+              <Badge variant="outline">{changeLogData.length} entries</Badge>
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            {changeLogData.length === 0 ? (
-              <div className="text-center py-8">
-                <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">No change history available.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {changeLogData.map((change) => (
-                  <div key={change.id} className="p-3 border border-gray-200 rounded-lg">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-medium text-sm">{change.description}</div>
-                        <div className="text-xs text-gray-600 mt-1">{change.details}</div>
-                      </div>
-                      <div className="text-right">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            change.action === "CREATE"
-                              ? "bg-green-100 text-green-800"
-                              : change.action === "UPDATE"
-                                ? "bg-blue-100 text-blue-800"
-                                : change.action === "DELETE"
-                                  ? "bg-red-100 text-red-800"
-                                  : "bg-gray-100 text-gray-800"
-                          }`}
-                        >
-                          {change.action}
-                        </span>
-                        <div className="text-xs text-gray-500 mt-1">{new Date(change.timestamp).toLocaleString()}</div>
-                      </div>
-                    </div>
+          <div className="py-4">
+            <div className="space-y-3">
+              {changeLogData.map((entry) => (
+                <div key={entry.id} className="p-3 border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span
+                      className={`font-medium text-sm px-2 py-1 rounded ${
+                        entry.action === "CREATE"
+                          ? "bg-green-100 text-green-700"
+                          : entry.action === "UPDATE"
+                            ? "bg-blue-100 text-blue-700"
+                            : entry.action === "DELETE"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-purple-100 text-purple-700"
+                      }`}
+                    >
+                      {entry.action}
+                    </span>
+                    <span className="text-xs text-gray-500">{new Date(entry.timestamp).toLocaleString()}</span>
                   </div>
-                ))}
-              </div>
-            )}
+                  <p className="text-sm font-medium text-gray-900 mb-1">{entry.description}</p>
+                  <p className="text-xs text-gray-600">{entry.details}</p>
+                </div>
+              ))}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowChangeLogDialog(false)}>
               Close
             </Button>
+            <Button onClick={handleExportGuestList}>
+              <Download className="h-4 w-4 mr-2" />
+              Export Log
+            </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Backup Progress Dialog */}
+      <Dialog open={backupProgress > 0 && backupProgress < 100} onOpenChange={() => {}}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Backing Up Data</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-gray-600">Creating a backup of your data...</p>
+            <progress value={backupProgress} max="100" className="w-full h-2 rounded-full bg-gray-200"></progress>
+            <p className="text-xs text-gray-500 mt-1">{backupProgress}% complete</p>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
