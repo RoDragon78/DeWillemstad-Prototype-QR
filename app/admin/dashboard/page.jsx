@@ -48,7 +48,8 @@ import {
   Shield,
   HardDrive,
   Clock,
-  Search,
+  Utensils,
+  FileDown,
 } from "lucide-react"
 
 // Import CabinDisplayModal component
@@ -137,6 +138,14 @@ export default function DashboardPage() {
   const [showIntegrityDialog, setShowIntegrityDialog] = useState(false)
   const [backupProgress, setBackupProgress] = useState(0)
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
+
+  // Weekly Menu Viewer state
+  const [selectedCabinForMenu, setSelectedCabinForMenu] = useState("")
+  const [cabinMenuData, setCabinMenuData] = useState(null)
+  const [loadingCabinMenu, setLoadingCabinMenu] = useState(false)
+  const [searchAttempted, setSearchAttempted] = useState(false)
+  const [printingMenu, setPrintingMenu] = useState(false)
+  const [exportingMenu, setExportingMenu] = useState(false)
 
   // Add a more robust storeScrollPosition function
   const storeScrollPosition = () => {
@@ -1510,6 +1519,280 @@ ${guests
     }
   }
 
+  // Search cabin menu function
+  const searchCabinMenu = async () => {
+    if (!selectedCabinForMenu.trim()) {
+      setStatusMessage({
+        type: "error",
+        message: "Please enter a cabin number.",
+      })
+      return
+    }
+
+    try {
+      setLoadingCabinMenu(true)
+      setSearchAttempted(true)
+      setCabinMenuData(null)
+      setStatusMessage(null)
+
+      // Get guests for this cabin
+      const { data: cabinGuests, error: guestsError } = await supabase
+        .from("guest_manifest")
+        .select("*")
+        .eq("cabin_nr", selectedCabinForMenu.trim())
+        .order("guest_name", { ascending: true })
+
+      if (guestsError) {
+        console.error("Error fetching cabin guests:", guestsError)
+        throw guestsError
+      }
+
+      if (!cabinGuests || cabinGuests.length === 0) {
+        setCabinMenuData(null)
+        return
+      }
+
+      // Get meal selections for these guests
+      const guestIds = cabinGuests.map((guest) => guest.id)
+      const { data: mealSelections, error: mealsError } = await supabase
+        .from("meal_selections")
+        .select("*")
+        .in("guest_id", guestIds)
+
+      if (mealsError) {
+        console.error("Error fetching meal selections:", mealsError)
+        throw mealsError
+      }
+
+      // Get menu items for meal names
+      const { data: menuItems, error: menuError } = await supabase.from("menu_items").select("*")
+
+      if (menuError) {
+        console.error("Error fetching menu items:", menuError)
+        throw menuError
+      }
+
+      // Process the data
+      const processedGuests = cabinGuests.map((guest) => {
+        const guestMeals = {}
+
+        // Get meals for each day
+        for (let day = 2; day <= 7; day++) {
+          const mealSelection = mealSelections?.find(
+            (selection) => selection.guest_id === guest.id && selection.day === day,
+          )
+
+          if (mealSelection) {
+            const menuItem = menuItems?.find((item) => item.id === mealSelection.meal_id)
+            if (menuItem) {
+              guestMeals[day] = {
+                meal_name: mealSelection.meal_name || menuItem.name_en,
+                meal_category: menuItem.meal_type || "Unknown",
+              }
+            }
+          }
+        }
+
+        return {
+          ...guest,
+          meals: guestMeals,
+        }
+      })
+
+      setCabinMenuData({
+        cabin_nr: selectedCabinForMenu.trim(),
+        guests: processedGuests,
+      })
+    } catch (error) {
+      console.error("Error searching cabin menu:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to load cabin menu data. Please try again.",
+      })
+    } finally {
+      setLoadingCabinMenu(false)
+    }
+  }
+
+  // Print weekly menu card function
+  const printWeeklyMenuCard = () => {
+    if (!cabinMenuData) return
+
+    try {
+      setPrintingMenu(true)
+
+      // Create print window
+      const printWindow = window.open("", "_blank")
+      const now = new Date()
+      const dateTime = now.toLocaleString()
+
+      // Create print content
+      const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Weekly Menu Card - Cabin ${cabinMenuData.cabin_nr}</title>
+        <style>
+          @media print {
+            body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+            .print-header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+            .cabin-info { margin-bottom: 20px; }
+            .menu-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+            .menu-table th, .menu-table td { border: 1px solid #000; padding: 8px; text-align: center; }
+            .menu-table th { background-color: #f0f0f0; font-weight: bold; }
+            .guest-name { text-align: left; font-weight: bold; }
+            .meal-name { font-weight: bold; font-size: 12px; }
+            .meal-category { font-size: 10px; color: #666; }
+            .meat { background-color: #ffebee; }
+            .fish { background-color: #e3f2fd; }
+            .vegetarian { background-color: #e8f5e8; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-header">
+          <h1>DeWillemstad - Weekly Menu Card</h1>
+          <p>Generated on: ${dateTime}</p>
+        </div>
+        
+        <div class="cabin-info">
+          <h2>Cabin ${cabinMenuData.cabin_nr}</h2>
+          <p>Guests: ${cabinMenuData.guests.map((g) => g.guest_name).join(", ")}</p>
+        </div>
+        
+        <table class="menu-table">
+          <thead>
+            <tr>
+              <th>Guest Name</th>
+              <th>Day 2<br/>Sunday</th>
+              <th>Day 3<br/>Monday</th>
+              <th>Day 4<br/>Tuesday</th>
+              <th>Day 5<br/>Wednesday</th>
+              <th>Day 6<br/>Thursday</th>
+              <th>Day 7<br/>Friday</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${cabinMenuData.guests
+              .map(
+                (guest) => `
+              <tr>
+                <td class="guest-name">${guest.guest_name}</td>
+                ${[2, 3, 4, 5, 6, 7]
+                  .map((day) => {
+                    const meal = guest.meals[day]
+                    if (meal) {
+                      const categoryClass =
+                        meal.meal_category.toLowerCase() === "meat"
+                          ? "meat"
+                          : meal.meal_category.toLowerCase() === "fish"
+                            ? "fish"
+                            : "vegetarian"
+                      return `
+                      <td class="${categoryClass}">
+                        <div class="meal-name">${meal.meal_name}</div>
+                        <div class="meal-category">${meal.meal_category}</div>
+                      </td>
+                    `
+                    } else {
+                      return "<td>No selection</td>"
+                    }
+                  })
+                  .join("")}
+              </tr>
+            `,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `
+
+      printWindow.document.write(printContent)
+      printWindow.document.close()
+
+      // Wait for content to load then print
+      printWindow.onload = () => {
+        printWindow.print()
+        printWindow.close()
+      }
+
+      setStatusMessage({
+        type: "success",
+        message: "Weekly menu card sent to printer.",
+      })
+    } catch (error) {
+      console.error("Error printing menu card:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to print menu card. Please try again.",
+      })
+    } finally {
+      setPrintingMenu(false)
+    }
+  }
+
+  // Export weekly menu PDF function
+  const exportWeeklyMenuPDF = async () => {
+    if (!cabinMenuData) return
+
+    try {
+      setExportingMenu(true)
+
+      // Create CSV content for export
+      const headers = [
+        "Guest Name",
+        "Day 2 (Sun)",
+        "Day 3 (Mon)",
+        "Day 4 (Tue)",
+        "Day 5 (Wed)",
+        "Day 6 (Thu)",
+        "Day 7 (Fri)",
+      ]
+      const csvContent = [
+        `Cabin ${cabinMenuData.cabin_nr} - Weekly Menu`,
+        `Generated: ${new Date().toLocaleString()}`,
+        "",
+        headers.join(","),
+        ...cabinMenuData.guests.map((guest) =>
+          [
+            `"${guest.guest_name}"`,
+            ...[2, 3, 4, 5, 6, 7].map((day) => {
+              const meal = guest.meals[day]
+              return meal ? `"${meal.meal_name} (${meal.meal_category})"` : "No selection"
+            }),
+          ].join(","),
+        ),
+      ].join("\n")
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.setAttribute("href", url)
+      link.setAttribute(
+        "download",
+        `cabin_${cabinMenuData.cabin_nr}_weekly_menu_${new Date().toISOString().split("T")[0]}.csv`,
+      )
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      setStatusMessage({
+        type: "success",
+        message: "Weekly menu exported successfully.",
+      })
+    } catch (error) {
+      console.error("Error exporting menu:", error)
+      setStatusMessage({
+        type: "error",
+        message: "Failed to export menu. Please try again.",
+      })
+    } finally {
+      setExportingMenu(false)
+    }
+  }
+
   // Add the return statement at the end of the DashboardPage function, just before the final closing brace
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1584,7 +1867,7 @@ ${guests
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle>Control Panel</CardTitle>
-                  <Button variant="outline" size="sm" onClick={handleManualRefresh} className="h-8">
+                  <Button variant="outline" size="sm" onClick={handleManualRefresh} className="h-8 bg-transparent">
                     <RefreshCw className="h-4 w-4 mr-1" />
                     Refresh Data
                   </Button>
@@ -1663,7 +1946,12 @@ ${guests
                   <Card>
                     <CardHeader className="flex flex-row items-center justify-between">
                       <CardTitle>Floor Plan</CardTitle>
-                      <Button variant="outline" size="sm" onClick={printFloorPlan} className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={printFloorPlan}
+                        className="flex items-center gap-2 bg-transparent"
+                      >
                         <Printer className="h-4 w-4" />
                         Print Floor Plan
                       </Button>
@@ -2097,7 +2385,138 @@ ${guests
 
           <TabsContent value="guest-management">
             <div className="space-y-6">
-              {/* Quick Add Guest Form */}
+              {/* Weekly Menu Viewer */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Utensils className="h-5 w-5" />
+                    Weekly Menu Viewer
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    {/* Cabin Search */}
+                    <div className="flex gap-4 items-end">
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium mb-2">Search by Cabin Number</label>
+                        <Input
+                          placeholder="Enter cabin number (e.g., 220)"
+                          value={selectedCabinForMenu}
+                          onChange={(e) => setSelectedCabinForMenu(e.target.value)}
+                        />
+                      </div>
+                      <Button onClick={searchCabinMenu} disabled={!selectedCabinForMenu || loadingCabinMenu}>
+                        {loadingCabinMenu ? "Searching..." : "Search"}
+                      </Button>
+                    </div>
+
+                    {/* Menu Display */}
+                    {cabinMenuData && (
+                      <div className="space-y-4">
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <h3 className="font-semibold text-lg">Cabin {cabinMenuData.cabin_nr} - Weekly Menu</h3>
+                          <p className="text-gray-600">{cabinMenuData.guests.length} guest(s)</p>
+                        </div>
+
+                        {/* Weekly Menu Grid */}
+                        <div className="overflow-x-auto">
+                          <table className="w-full border-collapse border border-gray-300">
+                            <thead>
+                              <tr className="bg-gray-100">
+                                <th className="border border-gray-300 p-3 text-left">Guest Name</th>
+                                <th className="border border-gray-300 p-3 text-center">
+                                  Day 2<br />
+                                  Sun
+                                </th>
+                                <th className="border border-gray-300 p-3 text-center">
+                                  Day 3<br />
+                                  Mon
+                                </th>
+                                <th className="border border-gray-300 p-3 text-center">
+                                  Day 4<br />
+                                  Tue
+                                </th>
+                                <th className="border border-gray-300 p-3 text-center">
+                                  Day 5<br />
+                                  Wed
+                                </th>
+                                <th className="border border-gray-300 p-3 text-center">
+                                  Day 6<br />
+                                  Thu
+                                </th>
+                                <th className="border border-gray-300 p-3 text-center">
+                                  Day 7<br />
+                                  Fri
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {cabinMenuData.guests.map((guest) => (
+                                <tr key={guest.id}>
+                                  <td className="border border-gray-300 p-3 font-medium">{guest.guest_name}</td>
+                                  {[2, 3, 4, 5, 6, 7].map((day) => (
+                                    <td key={day} className="border border-gray-300 p-3 text-center">
+                                      {guest.meals[day] ? (
+                                        <div className="space-y-1">
+                                          <div className="font-medium text-sm">{guest.meals[day].meal_name}</div>
+                                          <div
+                                            className={`text-xs px-2 py-1 rounded ${
+                                              guest.meals[day].meal_category === "Meat"
+                                                ? "bg-red-100 text-red-700"
+                                                : guest.meals[day].meal_category === "Fish"
+                                                  ? "bg-blue-100 text-blue-700"
+                                                  : "bg-green-100 text-green-700"
+                                            }`}
+                                          >
+                                            {guest.meals[day].meal_category}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <span className="text-gray-400 text-sm">No selection</span>
+                                      )}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Print Options */}
+                        <div className="flex gap-3 pt-4">
+                          <Button
+                            onClick={printWeeklyMenuCard}
+                            className="flex items-center gap-2"
+                            disabled={printingMenu}
+                          >
+                            <Printer className="h-4 w-4" />
+                            {printingMenu ? "Printing..." : "Print Weekly Menu Card"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={exportWeeklyMenuPDF}
+                            className="flex items-center gap-2 bg-transparent"
+                            disabled={exportingMenu}
+                          >
+                            <FileDown className="h-4 w-4" />
+                            {exportingMenu ? "Exporting..." : "Export PDF"}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No Results Message */}
+                    {searchAttempted && !cabinMenuData && !loadingCabinMenu && (
+                      <div className="text-center py-8 text-gray-500">
+                        <p>No menu data found for cabin {selectedCabinForMenu}</p>
+                        <p className="text-sm">Please check the cabin number and try again.</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Quick Add Guest */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -2120,78 +2539,31 @@ ${guests
                 </CardContent>
               </Card>
 
-              {/* Cabin Management Tools */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Home className="h-5 w-5" />
-                    Cabin Management Tools
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Bulk Cabin Update</label>
-                      <div className="flex gap-2">
-                        <Input placeholder="Cabin prefix (e.g., A1)" />
-                        <Button variant="outline" size="sm">
-                          Update Selected
-                        </Button>
-                      </div>
-                      <p className="text-xs text-gray-500">Updates selected guests with sequential cabin numbers</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Cabin Swap</label>
-                      <div className="flex gap-2">
-                        <Input placeholder="Cabin 1" />
-                        <Input placeholder="Cabin 2" />
-                        <Button variant="outline" size="sm">
-                          Swap
-                        </Button>
-                      </div>
-                      <p className="text-xs text-gray-500">Swap guests between two cabins</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Find Empty Cabins</label>
-                      <Button variant="outline" className="w-full">
-                        <Search className="h-4 w-4 mr-2" />
-                        Show Available Cabins
-                      </Button>
-                      <p className="text-xs text-gray-500">Find cabins with capacity for more guests</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* Enhanced Guest List with Cabin Focus */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Users className="h-5 w-5" />
-                      Guest List - Cabin Management
+                      Guest List
                     </div>
                     <div className="flex gap-2">
+                      <Button variant="outline" size="sm">
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Refresh
+                      </Button>
                       <Button variant="outline" size="sm">
                         <Download className="h-4 w-4 mr-2" />
                         Export Cabin Report
                       </Button>
                       <Button variant="outline" size="sm">
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Refresh
+                        <Download className="h-4 w-4 mr-2" />
+                        Export Guest List
                       </Button>
                     </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-sm text-gray-600 mb-4">
-                    <p>
-                      <strong>Note:</strong> This view focuses on cabin management. For table assignments, use the Table
-                      Assignment tab.
-                    </p>
-                  </div>
                   <GuestList />
                 </CardContent>
               </Card>
@@ -2213,7 +2585,7 @@ ${guests
                     <div className="space-y-2">
                       <Button
                         variant="outline"
-                        className="w-full"
+                        className="w-full bg-transparent"
                         onClick={handleImportExcelDataTools}
                         disabled={dataToolsLoading || importing}
                       >
@@ -2222,7 +2594,7 @@ ${guests
                       </Button>
                       <Button
                         variant="outline"
-                        className="w-full"
+                        className="w-full bg-transparent"
                         onClick={handleExportGuestList}
                         disabled={dataToolsLoading}
                       >
@@ -2231,7 +2603,7 @@ ${guests
                       </Button>
                       <Button
                         variant="outline"
-                        className="w-full"
+                        className="w-full bg-transparent"
                         onClick={handleGenerateReport}
                         disabled={isGeneratingReport}
                       >
@@ -2262,7 +2634,7 @@ ${guests
                     <div className="space-y-2">
                       <Button
                         variant="outline"
-                        className="w-full"
+                        className="w-full bg-transparent"
                         onClick={handleCheckDataIntegrity}
                         disabled={dataToolsLoading}
                       >
@@ -2271,7 +2643,7 @@ ${guests
                       </Button>
                       <Button
                         variant="outline"
-                        className="w-full"
+                        className="w-full bg-transparent"
                         onClick={handleBackupData}
                         disabled={dataToolsLoading}
                       >
@@ -2280,7 +2652,7 @@ ${guests
                       </Button>
                       <Button
                         variant="outline"
-                        className="w-full"
+                        className="w-full bg-transparent"
                         onClick={handleViewChangeHistory}
                         disabled={dataToolsLoading}
                       >
