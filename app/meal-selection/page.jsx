@@ -379,18 +379,73 @@ export default function MealSelectionPage() {
     }
 
     setIsSaving(true)
-    setIsPdfGenerating(true)
+    setIsPdfGenerating(false)
     setValidationError(null)
 
     try {
       // First save the selections
-      await handleSave()
+      const mealSelectionsToSave = []
 
-      // Then generate the PDF
-      await generatePdf()
+      for (const guestId in mealSelections) {
+        for (const day in mealSelections[guestId]) {
+          const mealId = mealSelections[guestId][day]
+          if (mealId) {
+            const meal = menuItems.find((m) => m.id === mealId)
+            if (meal) {
+              let mealName = meal.name_en
+              if (language === "nl" && meal.name_nl) mealName = meal.name_nl
+              if (language === "de" && meal.name_de) mealName = meal.name_de
+
+              mealSelectionsToSave.push({
+                guest_id: guestId,
+                day: Number.parseInt(day),
+                meal_id: mealId,
+                meal_name: mealName,
+                meal_category: meal.meal_type,
+                created_at: new Date().toISOString(),
+              })
+            }
+          }
+        }
+      }
+
+      // Save to database
+      if (mealSelectionsToSave.length > 0) {
+        const { error: saveError } = await supabase
+          .from("meal_selections")
+          .upsert(mealSelectionsToSave, { onConflict: "guest_id,day" })
+
+        if (saveError) {
+          console.error("Error saving meal selections:", saveError)
+          throw new Error("Failed to save meal selections")
+        }
+      }
+
+      // Now generate PDF
+      setIsSaving(false)
+      setIsPdfGenerating(true)
+
+      const pdfSuccess = await generatePdf()
+
+      if (pdfSuccess) {
+        // Show confirmation screen and start countdown
+        setShowConfirmation(true)
+        setRedirectCountdown(3)
+      } else {
+        // PDF failed but data was saved - show partial success message
+        alert(
+          "Your meal selections have been saved successfully, but there was an issue generating the PDF. You can try downloading it again from the confirmation screen.",
+        )
+        setShowConfirmation(true)
+        setRedirectCountdown(3)
+      }
     } catch (error) {
-      console.error("Error in save and generate PDF:", error)
-      alert("There was an error processing your request. Please try again.")
+      console.error("Error saving selections:", error)
+      if (error.message.includes("save")) {
+        alert("There was an error saving your selections. Please try again.")
+      } else {
+        alert("There was an error processing your request. Please try again.")
+      }
     } finally {
       setIsSaving(false)
       setIsPdfGenerating(false)
@@ -527,9 +582,9 @@ export default function MealSelectionPage() {
         </div>
 
         {validationError && (
-          <Alert className="mb-4 bg-amber-50 border-amber-200">
+          <Alert className="mb-4 bg-amber-50 border-amber-200 border-l-4 border-l-amber-500">
             <AlertCircle className="h-4 w-4 text-amber-600" />
-            <AlertDescription className="text-amber-700">{validationError}</AlertDescription>
+            <AlertDescription className="text-amber-800 font-medium">{validationError}</AlertDescription>
           </Alert>
         )}
 
@@ -540,7 +595,7 @@ export default function MealSelectionPage() {
         </div>
 
         <div className="mb-2 flex justify-between items-center">
-          <Button variant="outline" onClick={handleBackToHome} className="flex items-center">
+          <Button variant="outline" onClick={handleBackToHome} className="flex items-center bg-transparent">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Home
           </Button>
@@ -640,7 +695,7 @@ export default function MealSelectionPage() {
         </div>
 
         {/* Navigation buttons */}
-        <div className="mt-6 flex justify-between">
+        <div className="mt-6 flex justify-between items-center">
           <Button
             variant="outline"
             onClick={(e) => goToPreviousDay(e)}
@@ -651,9 +706,20 @@ export default function MealSelectionPage() {
             Back
           </Button>
 
-          <div className="flex gap-2">
+          <div className="flex gap-3 items-center">
             <Button
-              className="bg-blue-600 hover:bg-blue-700"
+              variant="outline"
+              onClick={(e) => goToNextDay(e)}
+              disabled={selectedDay >= 7}
+              className="flex items-center"
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+
+            <Button
+              size="lg"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6"
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -662,30 +728,15 @@ export default function MealSelectionPage() {
               disabled={isSaving || isPdfGenerating || !validateSelections()}
             >
               <FileDown className="mr-2 h-4 w-4" />
-              {isPdfGenerating || isSaving ? "Processing..." : "Save PDF and Submit"}
-            </Button>
-
-            <Button
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                handleSave()
-              }}
-              disabled={isSaving || !validateSelections()}
-            >
-              {isSaving ? "Saving..." : "Submit Selections"}
+              {isPdfGenerating && isSaving
+                ? "Saving & Generating PDF..."
+                : isPdfGenerating
+                  ? "Generating PDF..."
+                  : isSaving
+                    ? "Saving Selections..."
+                    : "Save PDF and Submit"}
             </Button>
           </div>
-
-          <Button
-            variant="outline"
-            onClick={(e) => goToNextDay(e)}
-            disabled={selectedDay >= 7}
-            className="flex items-center"
-          >
-            Next
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
         </div>
 
         <div className="mt-4 text-center text-sm text-gray-500">
