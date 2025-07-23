@@ -41,7 +41,6 @@ import {
   Award,
   Globe,
   BarChart2,
-  Plus,
   Upload,
   Download,
   FileText,
@@ -51,9 +50,6 @@ import {
   Utensils,
   FileDown,
 } from "lucide-react"
-
-// Import CabinDisplayModal component
-import { CabinDisplayModal } from "@/components/cabin-display-modal"
 
 // Updated table capacity configuration - table 14 is the only 8-person table
 const TABLE_CAPACITIES = {
@@ -379,6 +375,8 @@ export default function DashboardPage() {
 
   // Print floor plan function
   const printFloorPlan = () => {
+    const statistics = calculateStatistics()
+
     // Create a new window for printing
     const printWindow = window.open("", "_blank")
 
@@ -621,8 +619,6 @@ export default function DashboardPage() {
       setSelectedFile(file)
     }
   }
-
-  const statistics = calculateStatistics()
 
   // Check authentication and fetch data
   useEffect(() => {
@@ -1094,7 +1090,7 @@ export default function DashboardPage() {
       }
 
       const currentTableGuestCount = currentTableGuests ? currentTableGuests.length : 0
-      const tableCapacity = TABLE_CAPACITIES[tableNumber] || 0
+      const tableCapacity = TABLE_CAPACITIES[tableNumber] || 4
 
       if (currentTableGuestCount >= tableCapacity) {
         throw new Error(
@@ -1157,8 +1153,6 @@ export default function DashboardPage() {
     }
   }
 
-  // Add these new functions after the existing helper functions (around line 200):
-
   // Data Tools Functions
   const handleImportExcelDataTools = () => {
     // Reuse existing import functionality
@@ -1211,6 +1205,7 @@ export default function DashboardPage() {
   const handleGenerateReport = async () => {
     try {
       setIsGeneratingReport(true)
+      const statistics = calculateStatistics()
 
       const reportData = {
         generatedAt: new Date().toISOString(),
@@ -1365,6 +1360,7 @@ ${guests
         await new Promise((resolve) => setTimeout(resolve, 100))
       }
 
+      const statistics = calculateStatistics()
       const backupData = {
         timestamp: new Date().toISOString(),
         version: "1.0",
@@ -1519,7 +1515,7 @@ ${guests
     }
   }
 
-  // Search cabin menu function
+  // Search cabin menu function - FIXED VERSION
   const searchCabinMenu = async () => {
     if (!selectedCabinForMenu.trim()) {
       setStatusMessage({
@@ -1535,6 +1531,8 @@ ${guests
       setCabinMenuData(null)
       setStatusMessage(null)
 
+      console.log("Searching for cabin:", selectedCabinForMenu.trim())
+
       // Get guests for this cabin
       const { data: cabinGuests, error: guestsError } = await supabase
         .from("guest_manifest")
@@ -1547,48 +1545,48 @@ ${guests
         throw guestsError
       }
 
+      console.log("Found cabin guests:", cabinGuests)
+
       if (!cabinGuests || cabinGuests.length === 0) {
         setCabinMenuData(null)
+        setStatusMessage({
+          type: "error",
+          message: `No guests found for cabin ${selectedCabinForMenu.trim()}`,
+        })
         return
       }
 
       // Get meal selections for these guests
       const guestIds = cabinGuests.map((guest) => guest.id)
+      console.log("Fetching meal selections for guest IDs:", guestIds)
+
       const { data: mealSelections, error: mealsError } = await supabase
         .from("meal_selections")
         .select("*")
         .in("guest_id", guestIds)
+        .order("day", { ascending: true })
 
       if (mealsError) {
         console.error("Error fetching meal selections:", mealsError)
         throw mealsError
       }
 
-      // Get menu items for meal names
-      const { data: menuItems, error: menuError } = await supabase.from("menu_items").select("*")
+      console.log("Found meal selections:", mealSelections)
 
-      if (menuError) {
-        console.error("Error fetching menu items:", menuError)
-        throw menuError
-      }
-
-      // Process the data
+      // Process the data to match the desired format
       const processedGuests = cabinGuests.map((guest) => {
         const guestMeals = {}
 
-        // Get meals for each day
+        // Get meals for each day (2-7)
         for (let day = 2; day <= 7; day++) {
           const mealSelection = mealSelections?.find(
             (selection) => selection.guest_id === guest.id && selection.day === day,
           )
 
           if (mealSelection) {
-            const menuItem = menuItems?.find((item) => item.id === mealSelection.meal_id)
-            if (menuItem) {
-              guestMeals[day] = {
-                meal_name: mealSelection.meal_name || menuItem.name_en,
-                meal_category: menuItem.meal_type || "Unknown",
-              }
+            guestMeals[day] = {
+              meal_name: mealSelection.meal_name || "Unknown Meal",
+              meal_category: mealSelection.meal_category || "Unknown",
             }
           }
         }
@@ -1599,9 +1597,16 @@ ${guests
         }
       })
 
+      console.log("Processed guests with meals:", processedGuests)
+
       setCabinMenuData({
         cabin_nr: selectedCabinForMenu.trim(),
         guests: processedGuests,
+      })
+
+      setStatusMessage({
+        type: "success",
+        message: `Found ${cabinGuests.length} guest(s) in cabin ${selectedCabinForMenu.trim()}`,
       })
     } catch (error) {
       console.error("Error searching cabin menu:", error)
@@ -1621,12 +1626,10 @@ ${guests
     try {
       setPrintingMenu(true)
 
-      // Create print window
       const printWindow = window.open("", "_blank")
       const now = new Date()
       const dateTime = now.toLocaleString()
 
-      // Create print content
       const printContent = `
       <!DOCTYPE html>
       <html>
@@ -1638,14 +1641,19 @@ ${guests
             .print-header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
             .cabin-info { margin-bottom: 20px; }
             .menu-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-            .menu-table th, .menu-table td { border: 1px solid #000; padding: 8px; text-align: center; }
-            .menu-table th { background-color: #f0f0f0; font-weight: bold; }
-            .guest-name { text-align: left; font-weight: bold; }
-            .meal-name { font-weight: bold; font-size: 12px; }
-            .meal-category { font-size: 10px; color: #666; }
-            .meat { background-color: #ffebee; }
-            .fish { background-color: #e3f2fd; }
-            .vegetarian { background-color: #e8f5e8; }
+            .menu-table th, .menu-table td { border: 1px solid #000; padding: 12px; text-align: center; vertical-align: top; }
+            .menu-table th { background-color: #f0f0f0; font-weight: bold; font-size: 14px; }
+            .guest-name { text-align: left; font-weight: bold; background-color: #f8f9fa; }
+            .meal-cell { min-height: 60px; }
+            .meal-name { font-weight: bold; font-size: 13px; margin-bottom: 4px; }
+            .meal-category { font-size: 11px; color: #666; text-transform: capitalize; }
+            .meat-bg { background-color: #ffebee; }
+            .fish-bg { background-color: #e3f2fd; }
+            .vegetarian-bg { background-color: #e8f5e8; }
+            .no-selection { color: #999; font-style: italic; font-size: 12px; }
+            .legend { margin-top: 20px; }
+            .legend-item { display: inline-block; margin-right: 20px; }
+            .legend-color { display: inline-block; width: 15px; height: 15px; border: 1px solid #000; margin-right: 5px; vertical-align: middle; }
           }
         </style>
       </head>
@@ -1684,18 +1692,18 @@ ${guests
                     if (meal) {
                       const categoryClass =
                         meal.meal_category.toLowerCase() === "meat"
-                          ? "meat"
+                          ? "meat-bg"
                           : meal.meal_category.toLowerCase() === "fish"
-                            ? "fish"
-                            : "vegetarian"
+                            ? "fish-bg"
+                            : "vegetarian-bg"
                       return `
-                      <td class="${categoryClass}">
+                      <td class="meal-cell ${categoryClass}">
                         <div class="meal-name">${meal.meal_name}</div>
                         <div class="meal-category">${meal.meal_category}</div>
                       </td>
                     `
                     } else {
-                      return "<td>No selection</td>"
+                      return '<td class="meal-cell"><div class="no-selection">No selection</div></td>'
                     }
                   })
                   .join("")}
@@ -1705,6 +1713,22 @@ ${guests
               .join("")}
           </tbody>
         </table>
+        
+        <div class="legend">
+          <h3>Meal Category Legend:</h3>
+          <div class="legend-item">
+            <span class="legend-color" style="background-color: #ffebee;"></span>
+            Meat
+          </div>
+          <div class="legend-item">
+            <span class="legend-color" style="background-color: #e3f2fd;"></span>
+            Fish
+          </div>
+          <div class="legend-item">
+            <span class="legend-color" style="background-color: #e8f5e8;"></span>
+            Vegetarian
+          </div>
+        </div>
       </body>
       </html>
     `
@@ -1712,7 +1736,6 @@ ${guests
       printWindow.document.write(printContent)
       printWindow.document.close()
 
-      // Wait for content to load then print
       printWindow.onload = () => {
         printWindow.print()
         printWindow.close()
@@ -1740,48 +1763,46 @@ ${guests
     try {
       setExportingMenu(true)
 
-      // Create CSV content for export
-      const headers = [
-        "Guest Name",
-        "Day 2 (Sun)",
-        "Day 3 (Mon)",
-        "Day 4 (Tue)",
-        "Day 5 (Wed)",
-        "Day 6 (Thu)",
-        "Day 7 (Fri)",
-      ]
-      const csvContent = [
-        `Cabin ${cabinMenuData.cabin_nr} - Weekly Menu`,
-        `Generated: ${new Date().toLocaleString()}`,
-        "",
-        headers.join(","),
-        ...cabinMenuData.guests.map((guest) =>
-          [
-            `"${guest.guest_name}"`,
-            ...[2, 3, 4, 5, 6, 7].map((day) => {
-              const meal = guest.meals[day]
-              return meal ? `"${meal.meal_name} (${meal.meal_category})"` : "No selection"
-            }),
-          ].join(","),
-        ),
-      ].join("\n")
+      // Use the existing PDF service
+      const { generateAndDownloadPdf } = await import("@/components/pdf-service")
 
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement("a")
-      link.setAttribute("href", url)
-      link.setAttribute(
-        "download",
-        `cabin_${cabinMenuData.cabin_nr}_weekly_menu_${new Date().toISOString().split("T")[0]}.csv`,
-      )
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-
-      setStatusMessage({
-        type: "success",
-        message: "Weekly menu exported successfully.",
+      // Prepare data in the format expected by the PDF service
+      const mealSelections = {}
+      cabinMenuData.guests.forEach((guest) => {
+        mealSelections[guest.id] = guest.meals
       })
+
+      // Create mock menu items for the PDF service
+      const menuItems = []
+      let itemId = 1
+      cabinMenuData.guests.forEach((guest) => {
+        Object.values(guest.meals).forEach((meal) => {
+          if (meal && !menuItems.find((item) => item.name_en === meal.meal_name)) {
+            menuItems.push({
+              id: itemId++,
+              name_en: meal.meal_name,
+              meal_type: meal.meal_category,
+            })
+          }
+        })
+      })
+
+      const success = await generateAndDownloadPdf({
+        cabinNumber: cabinMenuData.cabin_nr,
+        guests: cabinMenuData.guests,
+        mealSelections: mealSelections,
+        menuItems: menuItems,
+        language: "en",
+      })
+
+      if (success) {
+        setStatusMessage({
+          type: "success",
+          message: "Weekly menu exported successfully.",
+        })
+      } else {
+        throw new Error("PDF generation failed")
+      }
     } catch (error) {
       console.error("Error exporting menu:", error)
       setStatusMessage({
@@ -1792,6 +1813,8 @@ ${guests
       setExportingMenu(false)
     }
   }
+
+  const statistics = calculateStatistics()
 
   // Add the return statement at the end of the DashboardPage function, just before the final closing brace
   return (
@@ -2393,104 +2416,133 @@ ${guests
                     Weekly Menu Viewer
                   </CardTitle>
                 </CardHeader>
+
                 <CardContent>
                   <div className="space-y-6">
                     {/* Cabin Search */}
                     <div className="flex gap-4 items-end">
                       <div className="flex-1">
-                        <label className="block text-sm font-medium mb-2">Search by Cabin Number</label>
+                        <label className="block text-sm font-medium mb-2">Cabin Number</label>
                         <Input
-                          placeholder="Enter cabin number (e.g., 220)"
+                          placeholder="Enter cabin number (e.g., 118)"
                           value={selectedCabinForMenu}
                           onChange={(e) => setSelectedCabinForMenu(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === "Enter") {
+                              searchCabinMenu()
+                            }
+                          }}
                         />
                       </div>
-                      <Button onClick={searchCabinMenu} disabled={!selectedCabinForMenu || loadingCabinMenu}>
-                        {loadingCabinMenu ? "Searching..." : "Search"}
+                      <Button
+                        onClick={searchCabinMenu}
+                        disabled={!selectedCabinForMenu || loadingCabinMenu}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6"
+                      >
+                        <Utensils className="h-4 w-4 mr-2" />
+                        {loadingCabinMenu ? "Searching..." : "Search Menu"}
                       </Button>
                     </div>
 
                     {/* Menu Display */}
                     {cabinMenuData && (
                       <div className="space-y-4">
-                        <div className="bg-blue-50 p-4 rounded-lg">
-                          <h3 className="font-semibold text-lg">Cabin {cabinMenuData.cabin_nr} - Weekly Menu</h3>
-                          <p className="text-gray-600">{cabinMenuData.guests.length} guest(s)</p>
+                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                          <h3 className="font-semibold text-lg text-blue-900">Cabin {cabinMenuData.cabin_nr}</h3>
+                          <p className="text-blue-700">
+                            Guests: {cabinMenuData.guests.map((g) => g.guest_name).join(", ")}
+                          </p>
                         </div>
 
                         {/* Weekly Menu Grid */}
                         <div className="overflow-x-auto">
-                          <table className="w-full border-collapse border border-gray-300">
+                          <table className="w-full border-collapse border border-gray-300 bg-white rounded-lg">
                             <thead>
                               <tr className="bg-gray-100">
-                                <th className="border border-gray-300 p-3 text-left">Guest Name</th>
-                                <th className="border border-gray-300 p-3 text-center">
+                                <th className="border border-gray-300 p-4 text-left font-semibold">Guest Name</th>
+                                <th className="border border-gray-300 p-4 text-center font-semibold">
                                   Day 2<br />
-                                  Sun
+                                  <span className="text-sm font-normal text-blue-600">Sunday</span>
                                 </th>
-                                <th className="border border-gray-300 p-3 text-center">
+                                <th className="border border-gray-300 p-4 text-center font-semibold">
                                   Day 3<br />
-                                  Mon
+                                  <span className="text-sm font-normal text-blue-600">Monday</span>
                                 </th>
-                                <th className="border border-gray-300 p-3 text-center">
+                                <th className="border border-gray-300 p-4 text-center font-semibold">
                                   Day 4<br />
-                                  Tue
+                                  <span className="text-sm font-normal text-blue-600">Tuesday</span>
                                 </th>
-                                <th className="border border-gray-300 p-3 text-center">
+                                <th className="border border-gray-300 p-4 text-center font-semibold">
                                   Day 5<br />
-                                  Wed
+                                  <span className="text-sm font-normal text-blue-600">Wednesday</span>
                                 </th>
-                                <th className="border border-gray-300 p-3 text-center">
+                                <th className="border border-gray-300 p-4 text-center font-semibold">
                                   Day 6<br />
-                                  Thu
+                                  <span className="text-sm font-normal text-blue-600">Thursday</span>
                                 </th>
-                                <th className="border border-gray-300 p-3 text-center">
+                                <th className="border border-gray-300 p-4 text-center font-semibold">
                                   Day 7<br />
-                                  Fri
+                                  <span className="text-sm font-normal text-blue-600">Friday</span>
                                 </th>
                               </tr>
                             </thead>
                             <tbody>
                               {cabinMenuData.guests.map((guest) => (
-                                <tr key={guest.id}>
-                                  <td className="border border-gray-300 p-3 font-medium">{guest.guest_name}</td>
-                                  {[2, 3, 4, 5, 6, 7].map((day) => (
-                                    <td key={day} className="border border-gray-300 p-3 text-center">
-                                      {guest.meals[day] ? (
-                                        <div className="space-y-1">
-                                          <div className="font-medium text-sm">{guest.meals[day].meal_name}</div>
-                                          <div
-                                            className={`text-xs px-2 py-1 rounded ${
-                                              guest.meals[day].meal_category === "Meat"
-                                                ? "bg-red-100 text-red-700"
-                                                : guest.meals[day].meal_category === "Fish"
-                                                  ? "bg-blue-100 text-blue-700"
-                                                  : "bg-green-100 text-green-700"
-                                            }`}
-                                          >
-                                            {guest.meals[day].meal_category}
+                                <tr key={guest.id} className="hover:bg-gray-50">
+                                  <td className="border border-gray-300 p-4 font-medium bg-gray-50">
+                                    {guest.guest_name}
+                                  </td>
+                                  {[2, 3, 4, 5, 6, 7].map((day) => {
+                                    const meal = guest.meals[day]
+                                    return (
+                                      <td
+                                        key={day}
+                                        className={`border border-gray-300 p-4 text-center min-h-[80px] ${
+                                          meal
+                                            ? meal.meal_category.toLowerCase() === "meat"
+                                              ? "bg-red-50"
+                                              : meal.meal_category.toLowerCase() === "fish"
+                                                ? "bg-blue-50"
+                                                : "bg-green-50"
+                                            : ""
+                                        }`}
+                                      >
+                                        {meal ? (
+                                          <div className="space-y-1">
+                                            <div className="font-medium text-sm leading-tight">{meal.meal_name}</div>
+                                            <div
+                                              className={`text-xs px-2 py-1 rounded inline-block ${
+                                                meal.meal_category.toLowerCase() === "meat"
+                                                  ? "bg-red-100 text-red-700"
+                                                  : meal.meal_category.toLowerCase() === "fish"
+                                                    ? "bg-blue-100 text-blue-700"
+                                                    : "bg-green-100 text-green-700"
+                                              }`}
+                                            >
+                                              {meal.meal_category}
+                                            </div>
                                           </div>
-                                        </div>
-                                      ) : (
-                                        <span className="text-gray-400 text-sm">No selection</span>
-                                      )}
-                                    </td>
-                                  ))}
+                                        ) : (
+                                          <span className="text-gray-400 text-sm italic">No selection</span>
+                                        )}
+                                      </td>
+                                    )
+                                  })}
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
 
-                        {/* Print Options */}
+                        {/* Action Buttons */}
                         <div className="flex gap-3 pt-4">
                           <Button
                             onClick={printWeeklyMenuCard}
-                            className="flex items-center gap-2"
+                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white"
                             disabled={printingMenu}
                           >
                             <Printer className="h-4 w-4" />
-                            {printingMenu ? "Printing..." : "Print Weekly Menu Card"}
+                            {printingMenu ? "Printing..." : "Print Menu Card"}
                           </Button>
                           <Button
                             variant="outline"
@@ -2502,39 +2554,36 @@ ${guests
                             {exportingMenu ? "Exporting..." : "Export PDF"}
                           </Button>
                         </div>
+
+                        {/* Meal Category Legend */}
+                        <div className="pt-4 border-t border-gray-200">
+                          <h4 className="text-sm font-medium text-gray-700 mb-3">Meal Category Legend:</h4>
+                          <div className="flex gap-6">
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 bg-red-100 border border-red-200 rounded"></div>
+                              <span className="text-sm text-gray-600">Meat</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 bg-blue-100 border border-blue-200 rounded"></div>
+                              <span className="text-sm text-gray-600">Fish</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 bg-green-100 border border-green-200 rounded"></div>
+                              <span className="text-sm text-gray-600">Vegetarian</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
 
                     {/* No Results Message */}
                     {searchAttempted && !cabinMenuData && !loadingCabinMenu && (
-                      <div className="text-center py-8 text-gray-500">
-                        <p>No menu data found for cabin {selectedCabinForMenu}</p>
+                      <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
+                        <Utensils className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                        <p className="text-lg font-medium">No menu data found for cabin {selectedCabinForMenu}</p>
                         <p className="text-sm">Please check the cabin number and try again.</p>
                       </div>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Quick Add Guest */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Plus className="h-5 w-5" />
-                    Quick Add Guest
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-                    <Input placeholder="Guest Name" />
-                    <Input placeholder="Cabin Number" />
-                    <Input placeholder="Nationality" />
-                    <Input placeholder="Booking Number" />
-                    <Input placeholder="Cruise ID" />
-                    <Button className="flex items-center gap-2">
-                      <Plus className="h-4 w-4" />
-                      Add Guest
-                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -2680,33 +2729,34 @@ ${guests
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Clock className="h-5 w-5" />
-                    Recent Changes
-                    <Badge variant="outline">Live Updates</Badge>
+                    Change History
+                    <Badge variant="outline">{changeLogData.length} entries</Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    <div className="text-xs p-2 bg-green-50 border border-green-200 rounded">
-                      <div className="flex justify-between">
-                        <span className="font-medium text-green-600">CREATE</span>
-                        <span className="text-gray-500">{new Date().toLocaleString()}</span>
+                  <div className="space-y-3">
+                    {changeLogData.map((entry) => (
+                      <div key={entry.id} className="p-3 border rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span
+                            className={`font-medium text-sm px-2 py-1 rounded ${
+                              entry.action === "CREATE"
+                                ? "bg-green-100 text-green-700"
+                                : entry.action === "UPDATE"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : entry.action === "DELETE"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-purple-100 text-purple-700"
+                            }`}
+                          >
+                            {entry.action}
+                          </span>
+                          <span className="text-xs text-gray-500">{new Date(entry.timestamp).toLocaleString()}</span>
+                        </div>
+                        <p className="text-sm font-medium text-gray-900 mb-1">{entry.description}</p>
+                        <p className="text-xs text-gray-600">{entry.details}</p>
                       </div>
-                      <div className="text-gray-600">New guest added to manifest</div>
-                    </div>
-                    <div className="text-xs p-2 bg-blue-50 border border-blue-200 rounded">
-                      <div className="flex justify-between">
-                        <span className="font-medium text-blue-600">UPDATE</span>
-                        <span className="text-gray-500">{new Date(Date.now() - 3600000).toLocaleString()}</span>
-                      </div>
-                      <div className="text-gray-600">Table assignment updated</div>
-                    </div>
-                    <div className="text-xs p-2 bg-purple-50 border border-purple-200 rounded">
-                      <div className="flex justify-between">
-                        <span className="font-medium text-purple-600">CABIN_UPDATE</span>
-                        <span className="text-gray-500">{new Date(Date.now() - 7200000).toLocaleString()}</span>
-                      </div>
-                      <div className="text-gray-600">Cabin number changed</div>
-                    </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -2887,124 +2937,74 @@ ${guests
                 value={clearConfirmText}
                 onChange={(e) => setClearConfirmText(e.target.value)}
                 placeholder="Type CLEAR to confirm"
-                className="font-mono"
                 disabled={assigningTables}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowClearDialog(false)
-                setClearConfirmText("")
-              }}
-              disabled={assigningTables}
-            >
+            <Button variant="outline" onClick={() => setShowClearDialog(false)} disabled={assigningTables}>
               Cancel
             </Button>
             <Button
-              variant="destructive"
               onClick={clearAllAssignments}
               disabled={clearConfirmText !== "CLEAR" || assigningTables}
-              className="flex items-center gap-2"
+              className="bg-red-600 hover:bg-red-700 text-white"
             >
-              {assigningTables ? (
-                <>
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                  Clearing...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="h-4 w-4" />
-                  Clear All Assignments
-                </>
-              )}
+              {assigningTables ? "Clearing..." : "Clear All Assignments"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Cabin Display Modal */}
-      <CabinDisplayModal open={showCabinDisplay} onOpenChange={setShowCabinDisplay} guests={guests} />
-
       {/* Data Integrity Issues Dialog */}
       <Dialog open={showIntegrityDialog} onOpenChange={setShowIntegrityDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5" />
-              Data Integrity Report
-              <Badge variant={integrityIssues.length === 0 ? "default" : "destructive"}>
-                {integrityIssues.length} issues found
-              </Badge>
+              Data Integrity Issues
+              <Badge variant="outline">{integrityIssues.length} issues found</Badge>
             </DialogTitle>
           </DialogHeader>
-          <div className="py-4">
-            {integrityIssues.length === 0 ? (
-              <div className="text-center py-8">
-                <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-500" />
-                <h3 className="text-lg font-medium text-green-700 mb-2">All Clear!</h3>
-                <p className="text-gray-600">No data integrity issues found.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {integrityIssues.map((issue, index) => (
-                  <div
-                    key={index}
-                    className={`p-4 rounded-lg border ${
-                      issue.severity === "HIGH"
-                        ? "bg-red-50 border-red-200"
-                        : issue.severity === "MEDIUM"
-                          ? "bg-yellow-50 border-yellow-200"
-                          : "bg-blue-50 border-blue-200"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span
-                        className={`font-medium text-sm ${
-                          issue.severity === "HIGH"
-                            ? "text-red-700"
-                            : issue.severity === "MEDIUM"
-                              ? "text-yellow-700"
-                              : "text-blue-700"
-                        }`}
-                      >
-                        {issue.severity} PRIORITY
-                      </span>
-                      <Badge variant="outline">{issue.type}</Badge>
-                    </div>
-                    <p className="text-sm text-gray-700 mb-2">{issue.description}</p>
-                    <p className="text-xs text-gray-500">Affected records: {issue.affectedRecords.length}</p>
+          <div className="py-4 max-h-96 overflow-y-auto">
+            <div className="space-y-3">
+              {integrityIssues.map((issue, index) => (
+                <div key={index} className="p-3 border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span
+                      className={`font-medium text-sm px-2 py-1 rounded ${
+                        issue.severity === "HIGH"
+                          ? "bg-red-100 text-red-700"
+                          : issue.severity === "MEDIUM"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : "bg-blue-100 text-blue-700"
+                      }`}
+                    >
+                      {issue.severity}
+                    </span>
+                    <span className="text-xs text-gray-500">{issue.type}</span>
                   </div>
-                ))}
-              </div>
-            )}
+                  <p className="text-sm text-gray-900">{issue.description}</p>
+                  <p className="text-xs text-gray-600 mt-1">Affected records: {issue.affectedRecords.length}</p>
+                </div>
+              ))}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowIntegrityDialog(false)}>
               Close
             </Button>
-            {integrityIssues.length > 0 && (
-              <Button
-                onClick={() => {
-                  // Auto-fix logic could go here
-                  setStatusMessage({
-                    type: "info",
-                    message: "Auto-fix functionality coming soon.",
-                  })
-                }}
-              >
-                Auto-Fix Issues
-              </Button>
-            )}
+            <Button onClick={handleExportGuestList}>
+              <Download className="h-4 w-4 mr-2" />
+              Export Report
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Change History Dialog */}
+      {/* Change Log Dialog */}
       <Dialog open={showChangeLogDialog} onOpenChange={setShowChangeLogDialog}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Clock className="h-5 w-5" />
@@ -3012,7 +3012,7 @@ ${guests
               <Badge variant="outline">{changeLogData.length} entries</Badge>
             </DialogTitle>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-4 max-h-96 overflow-y-auto">
             <div className="space-y-3">
               {changeLogData.map((entry) => (
                 <div key={entry.id} className="p-3 border rounded-lg">
@@ -3047,20 +3047,6 @@ ${guests
               Export Log
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Backup Progress Dialog */}
-      <Dialog open={backupProgress > 0 && backupProgress < 100} onOpenChange={() => {}}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Backing Up Data</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-gray-600">Creating a backup of your data...</p>
-            <progress value={backupProgress} max="100" className="w-full h-2 rounded-full bg-gray-200"></progress>
-            <p className="text-xs text-gray-500 mt-1">{backupProgress}% complete</p>
-          </div>
         </DialogContent>
       </Dialog>
     </div>
